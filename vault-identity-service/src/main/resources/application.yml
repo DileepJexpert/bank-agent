@@ -1,0 +1,68 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: vault-identity-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/vault_identity
+    username: ${DB_USERNAME:vault_identity}
+    password: ${DB_PASSWORD:vault_identity}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 5000ms
+
+vault:
+  jwt:
+    secret: ${JWT_SECRET:default-secret-key-for-dev-minimum-256-bits-long-change-in-prod}
+    issuer: vault-identity-service
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.idfcfirstbank.agent.vault.identity: DEBUG
+    org.springframework.security: INFO

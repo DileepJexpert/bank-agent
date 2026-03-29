@@ -1,0 +1,77 @@
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.log
+hs_err_pid*
+
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.factorypath
+.vscode/
+*.swp
+*.swo
+*~
+.metals/
+.bloop/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+*.env
+
+# Secrets
+**/secrets.yaml
+*credentials*
+*.pem
+*.key
+*.p12
+*.jks
+
+# Spring Boot
+spring-boot-starter/src/main/resources/application-local.yml
+
+# Flutter
+admin-dashboard/.dart_tool/
+admin-dashboard/.packages
+admin-dashboard/build/
+admin-dashboard/.flutter-plugins
+admin-dashboard/.flutter-plugins-dependencies
+admin-dashboard/pubspec.lock
+
+# Docker
+docker-compose.override.yml
+
+# Kubernetes
+deployment/kubernetes/secrets/*.yaml
+!deployment/kubernetes/secrets/secrets-template.yaml
+
+# GraalVM
+*.o
+*.so
+
+# Coverage
+coverage/
+*.lcov

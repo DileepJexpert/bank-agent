@@ -1,0 +1,209 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orchestrator
+  namespace: agents
+  labels:
+    app.kubernetes.io/name: orchestrator
+    app.kubernetes.io/part-of: ai-agent-platform
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+  namespace: agents
+  labels:
+    app.kubernetes.io/name: orchestrator
+    app.kubernetes.io/part-of: ai-agent-platform
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orchestrator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: orchestrator
+        app.kubernetes.io/part-of: ai-agent-platform
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8084"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      serviceAccountName: orchestrator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: orchestrator
+          image: ai-agent-platform/orchestrator:1.0.0-SNAPSHOT
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8084
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes"
+            - name: JAVA_OPTS
+              value: "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+            - name: LLM_PROVIDER
+              value: "anthropic"
+            - name: LLM_ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-api-keys
+                  key: anthropic-api-key
+            - name: LLM_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-api-keys
+                  key: openai-api-key
+                  optional: true
+            - name: LLM_MODEL
+              value: "claude-sonnet-4-20250514"
+            - name: LLM_MAX_TOKENS
+              value: "4096"
+            - name: LLM_TEMPERATURE
+              value: "0.1"
+            - name: SPRING_REDIS_HOST
+              value: "redis.agents.svc.cluster.local"
+            - name: SPRING_REDIS_PORT
+              value: "6379"
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka.agents.svc.cluster.local:9092"
+            - name: VAULT_IDENTITY_URL
+              value: "http://vault-identity.vault.svc.cluster.local:8081"
+            - name: VAULT_POLICY_URL
+              value: "http://vault-policy.vault.svc.cluster.local:8082"
+            - name: VAULT_AUDIT_URL
+              value: "http://vault-audit.vault.svc.cluster.local:8083"
+            - name: ACCOUNT_AGENT_URL
+              value: "http://account-agent.agents.svc.cluster.local:8085"
+            - name: CORE_BANKING_MCP_URL
+              value: "http://core-banking-mcp.mcp-servers.svc.cluster.local:8086"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/name
+                      operator: In
+                      values:
+                        - orchestrator
+                topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: orchestrator
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator
+  namespace: agents
+  labels:
+    app.kubernetes.io/name: orchestrator
+    app.kubernetes.io/part-of: ai-agent-platform
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8084
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: orchestrator
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: orchestrator
+  namespace: agents
+  labels:
+    app.kubernetes.io/name: orchestrator
+    app.kubernetes.io/part-of: ai-agent-platform
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: orchestrator
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Pods
+      pods:
+        metric:
+          name: active_sessions
+        target:
+          type: AverageValue
+          averageValue: "100"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 15
+      policies:
+        - type: Pods
+          value: 4
+          periodSeconds: 60
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+      selectPolicy: Max

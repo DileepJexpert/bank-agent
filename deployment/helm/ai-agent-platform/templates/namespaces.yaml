@@ -1,0 +1,12 @@
+{{- range $key, $ns := .Values.namespaces }}
+{{- if $ns.enabled }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $ns.name }}
+  labels:
+    {{- include "ai-agent-platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $ns.name }}
+{{- end }}
+{{- end }}

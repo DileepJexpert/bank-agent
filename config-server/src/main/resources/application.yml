@@ -1,0 +1,83 @@
+server:
+  port: 8888
+  shutdown: graceful
+
+spring:
+  application:
+    name: config-server
+
+  # Config Server backend configuration
+  cloud:
+    config:
+      server:
+        git:
+          uri: "${CONFIG_GIT_URI:https://github.com/idfcfirstbank/agent-platform-config.git}"
+          default-label: "${CONFIG_GIT_BRANCH:main}"
+          clone-on-start: true
+          force-pull: true
+          timeout: 10
+          search-paths:
+            - "{application}"
+            - "{application}/{profile}"
+          # Git credentials (for private repositories)
+          username: "${CONFIG_GIT_USERNAME:}"
+          password: "${CONFIG_GIT_PASSWORD:}"
+          # Skip SSL verification only in development
+          skip-ssl-validation: "${CONFIG_GIT_SKIP_SSL:false}"
+        # Native file system fallback (for local development)
+        native:
+          search-locations: "${CONFIG_NATIVE_LOCATIONS:classpath:/config}"
+        # Encryption key for sensitive properties
+        encrypt:
+          enabled: "${CONFIG_ENCRYPT_ENABLED:true}"
+
+  # Active profiles: use 'native' for local dev, 'git' for production
+  profiles:
+    active: "${CONFIG_PROFILE:native}"
+
+  # Security credentials
+  security:
+    user:
+      name: "${CONFIG_SERVER_USERNAME:configadmin}"
+      password: "${CONFIG_SERVER_PASSWORD:changeme}"
+      roles: ADMIN
+
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+# Encryption key for encrypting/decrypting sensitive config values
+encrypt:
+  key: "${CONFIG_ENCRYPT_KEY:default-encrypt-key-change-in-production}"
+
+# Actuator configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,env,refresh
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+    tags:
+      application: ${spring.application.name}
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.idfcfirstbank.agent.configserver: DEBUG
+    org.springframework.cloud.config: INFO
+    org.eclipse.jgit: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

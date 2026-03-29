@@ -1,0 +1,179 @@
+{{/* ===================== Orchestrator ===================== */}}
+{{- $orch := .Values.orchestrator -}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orchestrator
+  namespace: {{ .Values.namespaces.agents.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "orchestrator" "context" $) | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+  namespace: {{ .Values.namespaces.agents.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "orchestrator" "context" $) | nindent 4 }}
+spec:
+  replicas: {{ $orch.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ai-agent-platform.selectorLabels" (dict "name" "orchestrator") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ai-agent-platform.selectorLabels" (dict "name" "orchestrator") | nindent 8 }}
+        app.kubernetes.io/part-of: ai-agent-platform
+      annotations:
+        {{- include "ai-agent-platform.prometheusAnnotations" (dict "port" (toString $orch.port)) | nindent 8 }}
+    spec:
+      serviceAccountName: orchestrator
+      securityContext:
+        {{- include "ai-agent-platform.podSecurityContext" $ | nindent 8 }}
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: orchestrator
+          image: {{ include "ai-agent-platform.image" (dict "repository" $orch.image.repository "tag" $orch.image.tag "global" .Values.global) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $orch.port }}
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes"
+            - name: JAVA_OPTS
+              value: {{ $orch.javaOpts | quote }}
+            - name: LLM_PROVIDER
+              value: {{ $orch.llm.provider | quote }}
+            - name: LLM_ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $orch.llm.secretName }}
+                  key: anthropic-api-key
+            - name: LLM_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $orch.llm.secretName }}
+                  key: openai-api-key
+                  optional: true
+            - name: LLM_MODEL
+              value: {{ $orch.llm.model | quote }}
+            - name: LLM_MAX_TOKENS
+              value: {{ $orch.llm.maxTokens | quote }}
+            - name: LLM_TEMPERATURE
+              value: {{ $orch.llm.temperature | quote }}
+            - name: SPRING_REDIS_HOST
+              value: {{ $orch.redis.host | quote }}
+            - name: SPRING_REDIS_PORT
+              value: {{ $orch.redis.port | quote }}
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: {{ $orch.kafka.bootstrapServers | quote }}
+            - name: VAULT_IDENTITY_URL
+              value: "http://vault-identity.{{ $.Values.namespaces.vault.name }}.svc.cluster.local:{{ $.Values.vaultIdentity.port }}"
+            - name: VAULT_POLICY_URL
+              value: "http://vault-policy.{{ $.Values.namespaces.vault.name }}.svc.cluster.local:{{ $.Values.vaultPolicy.port }}"
+            - name: VAULT_AUDIT_URL
+              value: "http://vault-audit.{{ $.Values.namespaces.vault.name }}.svc.cluster.local:{{ $.Values.vaultAudit.port }}"
+            - name: ACCOUNT_AGENT_URL
+              value: "http://account-agent.{{ $.Values.namespaces.agents.name }}.svc.cluster.local:{{ $.Values.accountAgent.port }}"
+            - name: CORE_BANKING_MCP_URL
+              value: "http://core-banking-mcp.{{ $.Values.namespaces.mcpServers.name }}.svc.cluster.local:{{ $.Values.coreBankingMcp.port }}"
+          resources:
+            {{- toYaml $orch.resources | nindent 12 }}
+          {{- include "ai-agent-platform.livenessProbe" $ | nindent 10 }}
+          {{- include "ai-agent-platform.readinessProbe" $ | nindent 10 }}
+          {{- include "ai-agent-platform.startupProbe" $ | nindent 10 }}
+          securityContext:
+            {{- include "ai-agent-platform.containerSecurityContext" $ | nindent 12 }}
+      {{- include "ai-agent-platform.podAntiAffinity" (dict "name" "orchestrator") | nindent 6 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "ai-agent-platform.selectorLabels" (dict "name" "orchestrator") | nindent 14 }}
+
+{{/* ===================== Account Agent ===================== */}}
+{{- $aa := .Values.accountAgent -}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: account-agent
+  namespace: {{ .Values.namespaces.agents.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "account-agent" "context" $) | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: account-agent
+  namespace: {{ .Values.namespaces.agents.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "account-agent" "context" $) | nindent 4 }}
+spec:
+  replicas: {{ $aa.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ai-agent-platform.selectorLabels" (dict "name" "account-agent") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ai-agent-platform.selectorLabels" (dict "name" "account-agent") | nindent 8 }}
+        app.kubernetes.io/part-of: ai-agent-platform
+      annotations:
+        {{- include "ai-agent-platform.prometheusAnnotations" (dict "port" (toString $aa.port)) | nindent 8 }}
+    spec:
+      serviceAccountName: account-agent
+      securityContext:
+        {{- include "ai-agent-platform.podSecurityContext" $ | nindent 8 }}
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: account-agent
+          image: {{ include "ai-agent-platform.image" (dict "repository" $aa.image.repository "tag" $aa.image.tag "global" .Values.global) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $aa.port }}
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes"
+            - name: JAVA_OPTS
+              value: {{ $aa.javaOpts | quote }}
+            - name: SPRING_DATASOURCE_URL
+              value: {{ $aa.database.url | quote }}
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $aa.database.secretName }}
+                  key: username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $aa.database.secretName }}
+                  key: password
+            - name: SPRING_REDIS_HOST
+              value: {{ $aa.redis.host | quote }}
+            - name: SPRING_REDIS_PORT
+              value: {{ $aa.redis.port | quote }}
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: {{ $aa.kafka.bootstrapServers | quote }}
+            - name: VAULT_IDENTITY_URL
+              value: "http://vault-identity.{{ $.Values.namespaces.vault.name }}.svc.cluster.local:{{ $.Values.vaultIdentity.port }}"
+            - name: VAULT_POLICY_URL
+              value: "http://vault-policy.{{ $.Values.namespaces.vault.name }}.svc.cluster.local:{{ $.Values.vaultPolicy.port }}"
+            - name: CORE_BANKING_MCP_URL
+              value: "http://core-banking-mcp.{{ $.Values.namespaces.mcpServers.name }}.svc.cluster.local:{{ $.Values.coreBankingMcp.port }}"
+          resources:
+            {{- toYaml $aa.resources | nindent 12 }}
+          {{- include "ai-agent-platform.livenessProbe" $ | nindent 10 }}
+          {{- include "ai-agent-platform.readinessProbe" $ | nindent 10 }}
+          {{- include "ai-agent-platform.startupProbe" $ | nindent 10 }}
+          securityContext:
+            {{- include "ai-agent-platform.containerSecurityContext" $ | nindent 12 }}
+      {{- include "ai-agent-platform.podAntiAffinity" (dict "name" "account-agent") | nindent 6 }}

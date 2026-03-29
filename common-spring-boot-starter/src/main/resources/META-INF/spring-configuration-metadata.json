@@ -1,0 +1,63 @@
+{
+  "groups": [
+    {
+      "name": "agent.llm",
+      "type": "com.idfcfirstbank.agent.common.config.LlmProviderConfig",
+      "description": "Configuration properties for multi-LLM provider support."
+    }
+  ],
+  "properties": [
+    {
+      "name": "agent.llm.provider",
+      "type": "java.lang.String",
+      "description": "LLM provider to use. Supported values: anthropic, openai, ollama, azure-openai, mistral.",
+      "defaultValue": "anthropic"
+    },
+    {
+      "name": "agent.llm.model-name",
+      "type": "java.lang.String",
+      "description": "Model name or identifier for the chosen provider.",
+      "defaultValue": "claude-sonnet-4-20250514"
+    },
+    {
+      "name": "agent.llm.api-key",
+      "type": "java.lang.String",
+      "description": "API key used to authenticate with the LLM provider."
+    },
+    {
+      "name": "agent.llm.base-url",
+      "type": "java.lang.String",
+      "description": "Base URL for the LLM provider API endpoint."
+    },
+    {
+      "name": "agent.llm.temperature",
+      "type": "java.lang.Double",
+      "description": "Sampling temperature (0.0 – 1.0). Lower values produce more deterministic output.",
+      "defaultValue": 0.7
+    },
+    {
+      "name": "agent.llm.max-tokens",
+      "type": "java.lang.Integer",
+      "description": "Maximum number of tokens the model may generate in a single response.",
+      "defaultValue": 4096
+    },
+    {
+      "name": "agent.llm.timeout",
+      "type": "java.time.Duration",
+      "description": "HTTP request timeout when calling the LLM provider.",
+      "defaultValue": "30s"
+    }
+  ],
+  "hints": [
+    {
+      "name": "agent.llm.provider",
+      "values": [
+        { "value": "anthropic", "description": "Anthropic Claude models" },
+        { "value": "openai", "description": "OpenAI GPT models" },
+        { "value": "ollama", "description": "Locally hosted Ollama models" },
+        { "value": "azure-openai", "description": "Azure-hosted OpenAI models" },
+        { "value": "mistral", "description": "Mistral AI models" }
+      ]
+    }
+  ]
+}

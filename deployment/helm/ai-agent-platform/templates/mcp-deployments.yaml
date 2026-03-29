@@ -1,0 +1,138 @@
+{{/* ===================== Core Banking MCP Server ===================== */}}
+{{- $mcp := .Values.coreBankingMcp -}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: core-banking-mcp
+  namespace: {{ .Values.namespaces.mcpServers.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "core-banking-mcp" "context" $) | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-banking-mcp
+  namespace: {{ .Values.namespaces.mcpServers.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "core-banking-mcp" "context" $) | nindent 4 }}
+spec:
+  replicas: {{ $mcp.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ai-agent-platform.selectorLabels" (dict "name" "core-banking-mcp") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ai-agent-platform.selectorLabels" (dict "name" "core-banking-mcp") | nindent 8 }}
+        app.kubernetes.io/part-of: ai-agent-platform
+      annotations:
+        {{- include "ai-agent-platform.prometheusAnnotations" (dict "port" (toString $mcp.port)) | nindent 8 }}
+    spec:
+      serviceAccountName: core-banking-mcp
+      securityContext:
+        {{- include "ai-agent-platform.podSecurityContext" $ | nindent 8 }}
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: core-banking-mcp
+          image: {{ include "ai-agent-platform.image" (dict "repository" $mcp.image.repository "tag" $mcp.image.tag "global" .Values.global) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $mcp.port }}
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes"
+            - name: JAVA_OPTS
+              value: {{ $mcp.javaOpts | quote }}
+            - name: SPRING_DATASOURCE_URL
+              value: {{ $mcp.database.url | quote }}
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $mcp.database.secretName }}
+                  key: username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $mcp.database.secretName }}
+                  key: password
+            - name: SPRING_REDIS_HOST
+              value: {{ $mcp.redis.host | quote }}
+            - name: SPRING_REDIS_PORT
+              value: {{ $mcp.redis.port | quote }}
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: {{ $mcp.kafka.bootstrapServers | quote }}
+            - name: VAULT_AUDIT_URL
+              value: "http://vault-audit.{{ $.Values.namespaces.vault.name }}.svc.cluster.local:{{ $.Values.vaultAudit.port }}"
+          resources:
+            {{- toYaml $mcp.resources | nindent 12 }}
+          {{- include "ai-agent-platform.livenessProbe" $ | nindent 10 }}
+          {{- include "ai-agent-platform.readinessProbe" $ | nindent 10 }}
+          {{- include "ai-agent-platform.startupProbe" $ | nindent 10 }}
+          securityContext:
+            {{- include "ai-agent-platform.containerSecurityContext" $ | nindent 12 }}
+      {{- include "ai-agent-platform.podAntiAffinity" (dict "name" "core-banking-mcp") | nindent 6 }}
+---
+# Network Policy: only allow traffic from agents and vault namespaces
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: core-banking-mcp-network-policy
+  namespace: {{ .Values.namespaces.mcpServers.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "core-banking-mcp" "context" $) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ai-agent-platform.selectorLabels" (dict "name" "core-banking-mcp") | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/component: agents
+      ports:
+        - protocol: TCP
+          port: {{ $mcp.port }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/component: vault
+      ports:
+        - protocol: TCP
+          port: {{ $mcp.port }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/component: monitoring
+      ports:
+        - protocol: TCP
+          port: {{ $mcp.port }}
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 9092
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/component: vault
+      ports:
+        - protocol: TCP
+          port: {{ $.Values.vaultAudit.port }}
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53

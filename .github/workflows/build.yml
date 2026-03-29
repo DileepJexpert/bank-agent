@@ -1,0 +1,168 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [main, develop, 'feature/**', 'claude/**']
+  pull_request:
+    branches: [main, develop]
+
+env:
+  JAVA_VERSION: '21'
+  FLUTTER_VERSION: '3.22.0'
+
+jobs:
+  build-java:
+    name: Build Java Modules
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: agentplatform_test
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build with Maven
+        run: mvn clean install -DskipTests -B
+
+      - name: Run Tests
+        run: mvn verify -B
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/agentplatform_test
+          SPRING_DATASOURCE_USERNAME: testuser
+          SPRING_DATASOURCE_PASSWORD: testpass
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+
+      - name: Upload Test Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: '**/target/surefire-reports/*.xml'
+
+  build-flutter:
+    name: Build Flutter Admin Dashboard
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin-dashboard
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Build Web
+        run: flutter build web --release
+
+  docker-build:
+    name: Docker Build
+    needs: [build-java]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+
+    strategy:
+      matrix:
+        service:
+          - api-gateway
+          - config-server
+          - vault-identity-service
+          - vault-policy-service
+          - vault-audit-service
+          - agent-orchestrator-service
+          - agent-account-service
+          - mcp-core-banking-server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build JAR
+        run: mvn clean package -pl ${{ matrix.service }} -am -DskipTests -B
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push Docker Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/${{ matrix.service }}:$IMAGE_TAG -f ${{ matrix.service }}/Dockerfile .
+          docker push $ECR_REGISTRY/${{ matrix.service }}:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/${{ matrix.service }}:$IMAGE_TAG $ECR_REGISTRY/${{ matrix.service }}:latest
+          docker push $ECR_REGISTRY/${{ matrix.service }}:latest
+
+  policy-validation:
+    name: Validate OPA Policies
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup OPA
+        uses: open-policy-agent/setup-opa@v2
+        with:
+          version: latest
+
+      - name: Check Policy Syntax
+        run: |
+          find vault-policies -name "*.rego" -exec opa check {} \;
+
+      - name: Run Policy Tests
+        run: |
+          find vault-policies -name "*_test.rego" -exec dirname {} \; | sort -u | while read dir; do
+            opa test "$dir" -v
+          done

@@ -1,0 +1,11 @@
+{
+  "name": "AI Agent Platform - Admin Dashboard",
+  "short_name": "Agent Admin",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0D1B2A",
+  "theme_color": "#2962FF",
+  "description": "Admin dashboard for the AI Agent Platform",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false
+}

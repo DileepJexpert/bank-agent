@@ -1,0 +1,189 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: config-server
+  namespace: admin
+  labels:
+    app.kubernetes.io/name: config-server
+    app.kubernetes.io/part-of: ai-agent-platform
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-server-config
+  namespace: admin
+  labels:
+    app.kubernetes.io/name: config-server
+    app.kubernetes.io/part-of: ai-agent-platform
+data:
+  application.yaml: |
+    server:
+      port: 8888
+      shutdown: graceful
+
+    spring:
+      application:
+        name: config-server
+      lifecycle:
+        timeout-per-shutdown-phase: 30s
+      cloud:
+        config:
+          server:
+            git:
+              uri: ${CONFIG_REPO_URI:https://github.com/org/ai-agent-platform-config}
+              default-label: main
+              search-paths:
+                - '{application}'
+                - '{application}/{profile}'
+              clone-on-start: true
+              timeout: 10
+            native:
+              search-locations:
+                - classpath:/config
+                - file:/config
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: health,info,prometheus,metrics,env,refresh
+      endpoint:
+        health:
+          show-details: always
+          probes:
+            enabled: true
+
+    logging:
+      level:
+        root: INFO
+        org.springframework.cloud.config: DEBUG
+
+    encrypt:
+      enabled: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: config-server
+  namespace: admin
+  labels:
+    app.kubernetes.io/name: config-server
+    app.kubernetes.io/part-of: ai-agent-platform
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: config-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: config-server
+        app.kubernetes.io/part-of: ai-agent-platform
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8888"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      serviceAccountName: config-server
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: config-server
+          image: ai-agent-platform/config-server:1.0.0-SNAPSHOT
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8888
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes,native"
+            - name: JAVA_OPTS
+              value: "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+            - name: CONFIG_REPO_URI
+              value: "https://github.com/org/ai-agent-platform-config"
+            - name: ENCRYPT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: config-server-encrypt-key
+                  key: encrypt-key
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 30
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: config
+          configMap:
+            name: config-server-config
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/name
+                      operator: In
+                      values:
+                        - config-server
+                topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: config-server
+  namespace: admin
+  labels:
+    app.kubernetes.io/name: config-server
+    app.kubernetes.io/part-of: ai-agent-platform
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8888
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: config-server

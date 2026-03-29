@@ -1,0 +1,101 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: agent-orchestrator-service
+
+  # --- Spring AI LLM Configuration ---
+  # Switch providers by changing agent.llm.provider and the corresponding spring.ai.* block.
+  ai:
+    # Anthropic (default provider)
+    anthropic:
+      api-key: ${LLM_API_KEY:}
+      chat:
+        options:
+          model: claude-sonnet-4-20250514
+          max-tokens: 4096
+          temperature: 0.7
+
+    # OpenAI (enable by setting agent.llm.provider=openai)
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      chat:
+        options:
+          model: gpt-4o
+          max-tokens: 4096
+          temperature: 0.7
+      # For Azure OpenAI, override base-url:
+      # base-url: https://<your-resource>.openai.azure.com
+      # For Ollama, override base-url:
+      # base-url: http://localhost:11434/v1
+      # For Mistral, override base-url:
+      # base-url: https://api.mistral.ai/v1
+
+  # --- Redis ---
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 5000ms
+
+  # --- Kafka ---
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: orchestrator-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.idfcfirstbank.agent.*
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+# --- Agent Platform Configuration ---
+agent:
+  llm:
+    # Supported: anthropic, openai, ollama, azure-openai, mistral
+    provider: ${LLM_PROVIDER:anthropic}
+    model-name: ${LLM_MODEL:claude-sonnet-4-20250514}
+    api-key: ${LLM_API_KEY:}
+    temperature: 0.7
+    max-tokens: 4096
+    timeout: 30s
+
+  vault:
+    base-url: ${VAULT_POLICY_URL:http://vault-policy-service:8082}
+
+  routing:
+    account-service-url: ${ACCOUNT_SERVICE_URL:http://agent-account-service:8085}
+    card-service-url: ${CARD_SERVICE_URL:http://agent-card-service:8087}
+    loan-service-url: ${LOAN_SERVICE_URL:http://agent-loan-service:8088}
+
+# --- Actuator & Observability ---
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# --- API Docs ---
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+# --- Logging ---
+logging:
+  level:
+    com.idfcfirstbank.agent.orchestrator: DEBUG
+    org.springframework.ai: INFO
+    org.springframework.statemachine: INFO

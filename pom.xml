@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.idfcfirstbank.agent</groupId>
+    <artifactId>idfc-agent-platform</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>IDFC First Bank - AI Agent Platform</name>
+    <description>Enterprise-Grade Multi-Agent System with Agentic Vault Governance</description>
+    <url>https://github.com/dileepjexpert/bank-agent</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+        </license>
+    </licenses>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.3.5</version>
+        <relativePath/>
+    </parent>
+
+    <modules>
+        <module>common-spring-boot-starter</module>
+        <module>config-server</module>
+        <module>api-gateway</module>
+        <module>vault-identity-service</module>
+        <module>vault-policy-service</module>
+        <module>vault-audit-service</module>
+        <module>agent-orchestrator-service</module>
+        <module>agent-account-service</module>
+        <module>mcp-core-banking-server</module>
+    </modules>
+
+    <properties>
+        <java.version>21</java.version>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- Spring Ecosystem -->
+        <spring-cloud.version>2023.0.3</spring-cloud.version>
+        <spring-ai.version>1.0.0-M4</spring-ai.version>
+        <spring-statemachine.version>4.0.0</spring-statemachine.version>
+
+        <!-- Database -->
+        <postgresql.version>42.7.4</postgresql.version>
+        <flyway.version>10.21.0</flyway.version>
+
+        <!-- Kafka -->
+        <spring-kafka.version>3.3.0</spring-kafka.version>
+
+        <!-- Security & Policy -->
+        <opa-java.version>0.64.1</opa-java.version>
+        <jjwt.version>0.12.6</jjwt.version>
+        <bouncy-castle.version>1.78.1</bouncy-castle.version>
+
+        <!-- Observability -->
+        <micrometer-tracing.version>1.3.5</micrometer-tracing.version>
+        <logstash-logback.version>8.0</logstash-logback.version>
+
+        <!-- Resilience -->
+        <resilience4j.version>2.2.0</resilience4j.version>
+
+        <!-- Utilities -->
+        <mapstruct.version>1.6.3</mapstruct.version>
+        <lombok.version>1.18.34</lombok.version>
+        <springdoc.version>2.6.0</springdoc.version>
+
+        <!-- Docker -->
+        <jib-maven-plugin.version>3.4.4</jib-maven-plugin.version>
+        <docker.registry>your-ecr-registry.amazonaws.com</docker.registry>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Cloud BOM -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Spring AI BOM -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Common Starter -->
+            <dependency>
+                <groupId>com.idfcfirstbank.agent</groupId>
+                <artifactId>common-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- Database -->
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-core</artifactId>
+                <version>${flyway.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-database-postgresql</artifactId>
+                <version>${flyway.version}</version>
+            </dependency>
+
+            <!-- JWT -->
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-api</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-impl</artifactId>
+                <version>${jjwt.version}</version>
+                <scope>runtime</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-jackson</artifactId>
+                <version>${jjwt.version}</version>
+                <scope>runtime</scope>
+            </dependency>
+
+            <!-- Resilience4j -->
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-spring-boot3</artifactId>
+                <version>${resilience4j.version}</version>
+            </dependency>
+
+            <!-- Observability -->
+            <dependency>
+                <groupId>net.logstash.logback</groupId>
+                <artifactId>logstash-logback-encoder</artifactId>
+                <version>${logstash-logback.version}</version>
+            </dependency>
+
+            <!-- API Docs -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+
+            <!-- MapStruct -->
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+
+            <!-- Spring State Machine -->
+            <dependency>
+                <groupId>org.springframework.statemachine</groupId>
+                <artifactId>spring-statemachine-starter</artifactId>
+                <version>${spring-statemachine.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- Common to all modules -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <configuration>
+                        <excludes>
+                            <exclude>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                            </exclude>
+                        </excludes>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>com.google.cloud.tools</groupId>
+                    <artifactId>jib-maven-plugin</artifactId>
+                    <version>${jib-maven-plugin.version}</version>
+                    <configuration>
+                        <from>
+                            <image>eclipse-temurin:21-jre-alpine</image>
+                        </from>
+                        <to>
+                            <image>${docker.registry}/${project.artifactId}:${project.version}</image>
+                        </to>
+                        <container>
+                            <jvmFlags>
+                                <jvmFlag>-XX:+UseZGC</jvmFlag>
+                                <jvmFlag>-XX:MaxRAMPercentage=75.0</jvmFlag>
+                                <jvmFlag>-Djava.security.egd=file:/dev/./urandom</jvmFlag>
+                            </jvmFlags>
+                            <ports>
+                                <port>8080</port>
+                            </ports>
+                            <creationTime>USE_CURRENT_TIMESTAMP</creationTime>
+                        </container>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <source>${java.version}</source>
+                        <target>${java.version}</target>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+                            <path>
+                                <groupId>org.mapstruct</groupId>
+                                <artifactId>mapstruct-processor</artifactId>
+                                <version>${mapstruct.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+    <repositories>
+        <repository>
+            <id>spring-milestones</id>
+            <name>Spring Milestones</name>
+            <url>https://repo.spring.io/milestone</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+</project>

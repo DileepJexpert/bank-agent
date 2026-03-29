@@ -1,0 +1,327 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: ai-agent-platform
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      scrape_timeout: 10s
+
+    rule_files:
+      - /etc/prometheus/rules/*.yml
+
+    scrape_configs:
+      # API Gateway
+      - job_name: 'api-gateway'
+        metrics_path: /actuator/prometheus
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - gateway
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            regex: api-gateway
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: (.+)
+            replacement: ${1}:$1
+
+      # Vault Identity
+      - job_name: 'vault-identity'
+        metrics_path: /actuator/prometheus
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - vault
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            regex: vault-identity
+            action: keep
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+      # Vault Policy
+      - job_name: 'vault-policy'
+        metrics_path: /actuator/prometheus
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - vault
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            regex: vault-policy
+            action: keep
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+      # Vault Audit
+      - job_name: 'vault-audit'
+        metrics_path: /actuator/prometheus
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - vault
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            regex: vault-audit
+            action: keep
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+      # Orchestrator
+      - job_name: 'orchestrator'
+        metrics_path: /actuator/prometheus
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - agents
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            regex: orchestrator
+            action: keep
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+      # Account Agent
+      - job_name: 'account-agent'
+        metrics_path: /actuator/prometheus
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - agents
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            regex: account-agent
+            action: keep
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+      # Core Banking MCP
+      - job_name: 'core-banking-mcp'
+        metrics_path: /actuator/prometheus
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - mcp-servers
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            regex: core-banking-mcp
+            action: keep
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+      # Generic scrape for all annotated pods
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            action: replace
+            target_label: app
+---
+# ServiceMonitor for API Gateway
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: api-gateway
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/part-of: ai-agent-platform
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - gateway
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s
+---
+# ServiceMonitor for Vault Identity
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vault-identity
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: vault-identity
+    app.kubernetes.io/part-of: ai-agent-platform
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - vault
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vault-identity
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s
+---
+# ServiceMonitor for Vault Policy
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vault-policy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: vault-policy
+    app.kubernetes.io/part-of: ai-agent-platform
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - vault
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vault-policy
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s
+---
+# ServiceMonitor for Vault Audit
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vault-audit
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: vault-audit
+    app.kubernetes.io/part-of: ai-agent-platform
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - vault
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vault-audit
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s
+---
+# ServiceMonitor for Orchestrator
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: orchestrator
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: orchestrator
+    app.kubernetes.io/part-of: ai-agent-platform
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - agents
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orchestrator
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s
+---
+# ServiceMonitor for Account Agent
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: account-agent
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: account-agent
+    app.kubernetes.io/part-of: ai-agent-platform
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - agents
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: account-agent
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s
+---
+# ServiceMonitor for Core Banking MCP
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: core-banking-mcp
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: core-banking-mcp
+    app.kubernetes.io/part-of: ai-agent-platform
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - mcp-servers
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: core-banking-mcp
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s

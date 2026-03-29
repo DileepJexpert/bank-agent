@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topic-init
+  namespace: gateway
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: kafka-topic-creator
+          image: confluentinc/cp-kafka:7.5.0
+          command:
+            - /bin/bash
+            - -c
+            - |
+              echo "Waiting for Kafka to be ready..."
+              cub kafka-ready -b $KAFKA_BOOTSTRAP_SERVERS 1 60
+
+              for topic_config in \
+                "vault-audit-events:8:604800000" \
+                "gateway-access-log:4:259200000" \
+                "anomaly-alerts:2:2592000000" \
+                "txn-events:16:86400000" \
+                "fraud-alerts:4:2592000000" \
+                "fraud-responses:4:86400000" \
+                "collections-queue:2:604800000" \
+                "agent-handoff-context:4:3600000" \
+                "customer-feedback:2:7776000000"; do
+
+                TOPIC=$(echo $topic_config | cut -d: -f1)
+                PARTITIONS=$(echo $topic_config | cut -d: -f2)
+                RETENTION=$(echo $topic_config | cut -d: -f3)
+
+                echo "Creating topic: $TOPIC (partitions=$PARTITIONS, retention=$RETENTION ms)"
+                kafka-topics --bootstrap-server $KAFKA_BOOTSTRAP_SERVERS \
+                  --create --if-not-exists \
+                  --topic $TOPIC \
+                  --partitions $PARTITIONS \
+                  --replication-factor 3 \
+                  --config retention.ms=$RETENTION
+              done
+
+              echo "All topics created. Listing:"
+              kafka-topics --bootstrap-server $KAFKA_BOOTSTRAP_SERVERS --list
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka-headless.gateway.svc.cluster.local:9092"

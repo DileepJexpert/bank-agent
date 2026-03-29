@@ -1,0 +1,335 @@
+# =============================================================================
+# AI Agent Platform - Helm Values
+# =============================================================================
+
+global:
+  imagePullPolicy: IfNotPresent
+  imageRegistry: ""  # e.g., 123456789.dkr.ecr.us-east-1.amazonaws.com
+  environment: production
+  domain: api.ai-agent-platform.example.com
+
+# -----------------------------------------------------------------------------
+# Namespace configuration
+# -----------------------------------------------------------------------------
+namespaces:
+  vault:
+    enabled: true
+    name: vault
+  agents:
+    enabled: true
+    name: agents
+  mcpServers:
+    enabled: true
+    name: mcp-servers
+  gateway:
+    enabled: true
+    name: gateway
+  monitoring:
+    enabled: true
+    name: monitoring
+  admin:
+    enabled: true
+    name: admin
+
+# -----------------------------------------------------------------------------
+# API Gateway
+# -----------------------------------------------------------------------------
+gateway:
+  replicaCount: 2
+  image:
+    repository: ai-agent-platform/api-gateway
+    tag: "1.0.0-SNAPSHOT"
+  port: 8080
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilization: 70
+    targetMemoryUtilization: 80
+  javaOpts: "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+  serviceAccount:
+    create: true
+    name: api-gateway
+
+# -----------------------------------------------------------------------------
+# Vault Identity
+# -----------------------------------------------------------------------------
+vaultIdentity:
+  replicaCount: 2
+  image:
+    repository: ai-agent-platform/vault-identity
+    tag: "1.0.0-SNAPSHOT"
+  port: 8081
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilization: 70
+  database:
+    url: "jdbc:postgresql://postgres.vault.svc.cluster.local:5432/vault_identity"
+    secretName: vault-db-credentials
+  redis:
+    host: "redis.vault.svc.cluster.local"
+    port: 6379
+  jwtSecret:
+    secretName: jwt-secret
+    key: secret
+  javaOpts: "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+
+# -----------------------------------------------------------------------------
+# Vault Policy
+# -----------------------------------------------------------------------------
+vaultPolicy:
+  replicaCount: 2
+  image:
+    repository: ai-agent-platform/vault-policy
+    tag: "1.0.0-SNAPSHOT"
+  port: 8082
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilization: 70
+  database:
+    url: "jdbc:postgresql://postgres.vault.svc.cluster.local:5432/vault_policy"
+    secretName: vault-db-credentials
+  opa:
+    enabled: true
+    image: openpolicyagent/opa:0.60.0-envoy
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+  javaOpts: "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+
+# -----------------------------------------------------------------------------
+# Vault Audit
+# -----------------------------------------------------------------------------
+vaultAudit:
+  replicaCount: 2
+  image:
+    repository: ai-agent-platform/vault-audit
+    tag: "1.0.0-SNAPSHOT"
+  port: 8083
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilization: 70
+  database:
+    url: "jdbc:postgresql://postgres.vault.svc.cluster.local:5432/vault_audit"
+    secretName: vault-db-credentials
+  kafka:
+    bootstrapServers: "kafka.vault.svc.cluster.local:9092"
+    consumerGroupId: "vault-audit-group"
+    topics:
+      auditEvents: "audit-events"
+      complianceEvents: "compliance-events"
+  persistence:
+    enabled: true
+    storageClassName: gp3
+    size: 50Gi
+  javaOpts: "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+
+# -----------------------------------------------------------------------------
+# Orchestrator
+# -----------------------------------------------------------------------------
+orchestrator:
+  replicaCount: 3
+  image:
+    repository: ai-agent-platform/orchestrator
+    tag: "1.0.0-SNAPSHOT"
+  port: 8084
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  hpa:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilization: 70
+    customMetrics:
+      enabled: true
+      activeSessions:
+        averageValue: "100"
+  llm:
+    provider: "anthropic"
+    model: "claude-sonnet-4-20250514"
+    maxTokens: 4096
+    temperature: "0.1"
+    secretName: llm-api-keys
+  redis:
+    host: "redis.agents.svc.cluster.local"
+    port: 6379
+  kafka:
+    bootstrapServers: "kafka.agents.svc.cluster.local:9092"
+  javaOpts: "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+
+# -----------------------------------------------------------------------------
+# Account Agent
+# -----------------------------------------------------------------------------
+accountAgent:
+  replicaCount: 2
+  image:
+    repository: ai-agent-platform/account-agent
+    tag: "1.0.0-SNAPSHOT"
+  port: 8085
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilization: 70
+  database:
+    url: "jdbc:postgresql://postgres.agents.svc.cluster.local:5432/account_agent"
+    secretName: agents-db-credentials
+  redis:
+    host: "redis.agents.svc.cluster.local"
+    port: 6379
+  kafka:
+    bootstrapServers: "kafka.agents.svc.cluster.local:9092"
+  javaOpts: "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+
+# -----------------------------------------------------------------------------
+# Core Banking MCP Server
+# -----------------------------------------------------------------------------
+coreBankingMcp:
+  replicaCount: 2
+  image:
+    repository: ai-agent-platform/core-banking-mcp
+    tag: "1.0.0-SNAPSHOT"
+  port: 8086
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilization: 70
+  database:
+    url: "jdbc:postgresql://postgres.mcp-servers.svc.cluster.local:5432/core_banking"
+    secretName: mcp-db-credentials
+  redis:
+    host: "redis.mcp-servers.svc.cluster.local"
+    port: 6379
+  kafka:
+    bootstrapServers: "kafka.mcp-servers.svc.cluster.local:9092"
+  javaOpts: "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+
+# -----------------------------------------------------------------------------
+# Config Server
+# -----------------------------------------------------------------------------
+configServer:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ai-agent-platform/config-server
+    tag: "1.0.0-SNAPSHOT"
+  port: 8888
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  configRepoUri: "https://github.com/org/ai-agent-platform-config"
+  javaOpts: "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+
+# -----------------------------------------------------------------------------
+# Ingress (AWS ALB)
+# -----------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health
+    alb.ingress.kubernetes.io/healthcheck-port: "8080"
+  certificateArn: "arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERTIFICATE_ID"
+  wafAclArn: ""
+  hosts:
+    - host: api.ai-agent-platform.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+# -----------------------------------------------------------------------------
+# Monitoring
+# -----------------------------------------------------------------------------
+monitoring:
+  prometheus:
+    enabled: true
+    scrapeInterval: 15s
+  grafana:
+    enabled: true
+    dashboards: true
+  serviceMonitors:
+    enabled: true
+
+# -----------------------------------------------------------------------------
+# Security defaults
+# -----------------------------------------------------------------------------
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL

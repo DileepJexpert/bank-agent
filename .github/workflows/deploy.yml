@@ -1,0 +1,65 @@
+name: Deploy to EKS
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      services:
+        description: 'Services to deploy (comma-separated, or "all")'
+        required: true
+        default: 'all'
+
+env:
+  AWS_REGION: ap-south-1
+  EKS_CLUSTER: ai-agent-platform
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }}-${{ github.event.inputs.environment }} --region ${{ env.AWS_REGION }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install ai-agent-platform \
+            deployment/helm/ai-agent-platform \
+            --namespace default \
+            --values deployment/helm/ai-agent-platform/values.yaml \
+            --values deployment/helm/ai-agent-platform/values-${{ github.event.inputs.environment }}.yaml \
+            --set global.image.tag=${{ github.sha }} \
+            --set global.environment=${{ github.event.inputs.environment }} \
+            --wait \
+            --timeout 10m
+
+      - name: Verify Deployment
+        run: |
+          echo "Checking deployment status..."
+          kubectl get pods -A -l app.kubernetes.io/part-of=ai-agent-platform
+          echo "Checking service health..."
+          for ns in gateway vault agents mcp-servers; do
+            kubectl get pods -n $ns
+          done

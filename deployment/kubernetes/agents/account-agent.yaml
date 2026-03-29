@@ -1,0 +1,186 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: account-agent
+  namespace: agents
+  labels:
+    app.kubernetes.io/name: account-agent
+    app.kubernetes.io/part-of: ai-agent-platform
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: account-agent
+  namespace: agents
+  labels:
+    app.kubernetes.io/name: account-agent
+    app.kubernetes.io/part-of: ai-agent-platform
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: account-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: account-agent
+        app.kubernetes.io/part-of: ai-agent-platform
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8085"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      serviceAccountName: account-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: account-agent
+          image: ai-agent-platform/account-agent:1.0.0-SNAPSHOT
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8085
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes"
+            - name: JAVA_OPTS
+              value: "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres.agents.svc.cluster.local:5432/account_agent"
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: agents-db-credentials
+                  key: username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agents-db-credentials
+                  key: password
+            - name: SPRING_REDIS_HOST
+              value: "redis.agents.svc.cluster.local"
+            - name: SPRING_REDIS_PORT
+              value: "6379"
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka.agents.svc.cluster.local:9092"
+            - name: VAULT_IDENTITY_URL
+              value: "http://vault-identity.vault.svc.cluster.local:8081"
+            - name: VAULT_POLICY_URL
+              value: "http://vault-policy.vault.svc.cluster.local:8082"
+            - name: CORE_BANKING_MCP_URL
+              value: "http://core-banking-mcp.mcp-servers.svc.cluster.local:8086"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/name
+                      operator: In
+                      values:
+                        - account-agent
+                topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: account-agent
+  namespace: agents
+  labels:
+    app.kubernetes.io/name: account-agent
+    app.kubernetes.io/part-of: ai-agent-platform
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8085
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: account-agent
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: account-agent
+  namespace: agents
+  labels:
+    app.kubernetes.io/name: account-agent
+    app.kubernetes.io/part-of: ai-agent-platform
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: account-agent
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60

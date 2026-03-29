@@ -1,0 +1,84 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-agent-platform-ingress
+  namespace: gateway
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/part-of: ai-agent-platform
+  annotations:
+    # AWS ALB Ingress Controller annotations
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERTIFICATE_ID
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+
+    # Health check configuration
+    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health
+    alb.ingress.kubernetes.io/healthcheck-port: "8080"
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
+
+    # Security headers
+    alb.ingress.kubernetes.io/actions.response-headers: |
+      {"type":"fixed-response","fixedResponseConfig":{"contentType":"text/plain","statusCode":"200","messageBody":"OK"}}
+
+    # WAF integration
+    alb.ingress.kubernetes.io/wafv2-acl-arn: arn:aws:wafv2:us-east-1:ACCOUNT_ID:regional/webacl/ai-agent-platform-waf/WAF_ID
+
+    # Access logging
+    alb.ingress.kubernetes.io/load-balancer-attributes: >-
+      access_logs.s3.enabled=true,
+      access_logs.s3.bucket=ai-agent-platform-alb-logs,
+      access_logs.s3.prefix=gateway,
+      idle_timeout.timeout_seconds=60,
+      routing.http.drop_invalid_header_fields.enabled=true
+
+    # Connection settings
+    alb.ingress.kubernetes.io/target-group-attributes: >-
+      deregistration_delay.timeout_seconds=30,
+      stickiness.enabled=false
+
+    # Tags for cost allocation
+    alb.ingress.kubernetes.io/tags: >-
+      Environment=production,
+      Team=platform,
+      Application=ai-agent-platform
+spec:
+  ingressClassName: alb
+  tls:
+    - hosts:
+        - api.ai-agent-platform.example.com
+  rules:
+    - host: api.ai-agent-platform.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080
+---
+# Rate limiting via AWS WAF is recommended; additionally use a
+# PodDisruptionBudget to ensure availability during rolling updates
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-gateway-pdb
+  namespace: gateway
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/part-of: ai-agent-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway

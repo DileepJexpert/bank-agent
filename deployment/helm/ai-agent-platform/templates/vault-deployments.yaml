@@ -1,0 +1,307 @@
+{{/* ===================== Vault Identity ===================== */}}
+{{- $vi := .Values.vaultIdentity -}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-identity
+  namespace: {{ .Values.namespaces.vault.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "vault-identity" "context" $) | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault-identity
+  namespace: {{ .Values.namespaces.vault.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "vault-identity" "context" $) | nindent 4 }}
+spec:
+  replicas: {{ $vi.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ai-agent-platform.selectorLabels" (dict "name" "vault-identity") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ai-agent-platform.selectorLabels" (dict "name" "vault-identity") | nindent 8 }}
+        app.kubernetes.io/part-of: ai-agent-platform
+      annotations:
+        {{- include "ai-agent-platform.prometheusAnnotations" (dict "port" (toString $vi.port)) | nindent 8 }}
+    spec:
+      serviceAccountName: vault-identity
+      securityContext:
+        {{- include "ai-agent-platform.podSecurityContext" $ | nindent 8 }}
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: vault-identity
+          image: {{ include "ai-agent-platform.image" (dict "repository" $vi.image.repository "tag" $vi.image.tag "global" .Values.global) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $vi.port }}
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes"
+            - name: JAVA_OPTS
+              value: {{ $vi.javaOpts | quote }}
+            - name: SPRING_DATASOURCE_URL
+              value: {{ $vi.database.url | quote }}
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $vi.database.secretName }}
+                  key: username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $vi.database.secretName }}
+                  key: password
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $vi.jwtSecret.secretName }}
+                  key: {{ $vi.jwtSecret.key }}
+            - name: SPRING_REDIS_HOST
+              value: {{ $vi.redis.host | quote }}
+            - name: SPRING_REDIS_PORT
+              value: {{ $vi.redis.port | quote }}
+          resources:
+            {{- toYaml $vi.resources | nindent 12 }}
+          {{- include "ai-agent-platform.livenessProbe" $ | nindent 10 }}
+          {{- include "ai-agent-platform.readinessProbe" $ | nindent 10 }}
+          {{- include "ai-agent-platform.startupProbe" $ | nindent 10 }}
+          securityContext:
+            {{- include "ai-agent-platform.containerSecurityContext" $ | nindent 12 }}
+      {{- include "ai-agent-platform.podAntiAffinity" (dict "name" "vault-identity") | nindent 6 }}
+
+{{/* ===================== Vault Policy ===================== */}}
+{{- $vp := .Values.vaultPolicy -}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-policy
+  namespace: {{ .Values.namespaces.vault.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "vault-policy" "context" $) | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault-policy
+  namespace: {{ .Values.namespaces.vault.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "vault-policy" "context" $) | nindent 4 }}
+spec:
+  replicas: {{ $vp.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ai-agent-platform.selectorLabels" (dict "name" "vault-policy") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ai-agent-platform.selectorLabels" (dict "name" "vault-policy") | nindent 8 }}
+        app.kubernetes.io/part-of: ai-agent-platform
+      annotations:
+        {{- include "ai-agent-platform.prometheusAnnotations" (dict "port" (toString $vp.port)) | nindent 8 }}
+    spec:
+      serviceAccountName: vault-policy
+      securityContext:
+        {{- include "ai-agent-platform.podSecurityContext" $ | nindent 8 }}
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: vault-policy
+          image: {{ include "ai-agent-platform.image" (dict "repository" $vp.image.repository "tag" $vp.image.tag "global" .Values.global) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $vp.port }}
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes"
+            - name: JAVA_OPTS
+              value: {{ $vp.javaOpts | quote }}
+            - name: SPRING_DATASOURCE_URL
+              value: {{ $vp.database.url | quote }}
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $vp.database.secretName }}
+                  key: username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $vp.database.secretName }}
+                  key: password
+            - name: OPA_SIDECAR_URL
+              value: "http://localhost:8181"
+          resources:
+            {{- toYaml $vp.resources | nindent 12 }}
+          {{- include "ai-agent-platform.livenessProbe" $ | nindent 10 }}
+          {{- include "ai-agent-platform.readinessProbe" $ | nindent 10 }}
+          {{- include "ai-agent-platform.startupProbe" $ | nindent 10 }}
+          securityContext:
+            {{- include "ai-agent-platform.containerSecurityContext" $ | nindent 12 }}
+        {{- if $vp.opa.enabled }}
+        - name: opa-sidecar
+          image: {{ $vp.opa.image }}
+          imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          ports:
+            - name: opa-http
+              containerPort: 8181
+              protocol: TCP
+          args:
+            - "run"
+            - "--server"
+            - "--addr=0.0.0.0:8181"
+            - "--log-level=info"
+            - "--log-format=json"
+            - "/policies"
+          resources:
+            {{- toYaml $vp.opa.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: opa-http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health?bundles
+              port: opa-http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: opa-policies
+              mountPath: /policies
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+        {{- end }}
+      {{- if $vp.opa.enabled }}
+      volumes:
+        - name: opa-policies
+          configMap:
+            name: opa-policies
+      {{- end }}
+      {{- include "ai-agent-platform.podAntiAffinity" (dict "name" "vault-policy") | nindent 6 }}
+
+{{/* ===================== Vault Audit ===================== */}}
+{{- $va := .Values.vaultAudit -}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-audit
+  namespace: {{ .Values.namespaces.vault.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "vault-audit" "context" $) | nindent 4 }}
+---
+{{- if $va.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vault-audit-data
+  namespace: {{ $.Values.namespaces.vault.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "vault-audit" "context" $) | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ $va.persistence.storageClassName }}
+  resources:
+    requests:
+      storage: {{ $va.persistence.size }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault-audit
+  namespace: {{ .Values.namespaces.vault.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "vault-audit" "context" $) | nindent 4 }}
+spec:
+  replicas: {{ $va.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ai-agent-platform.selectorLabels" (dict "name" "vault-audit") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ai-agent-platform.selectorLabels" (dict "name" "vault-audit") | nindent 8 }}
+        app.kubernetes.io/part-of: ai-agent-platform
+      annotations:
+        {{- include "ai-agent-platform.prometheusAnnotations" (dict "port" (toString $va.port)) | nindent 8 }}
+    spec:
+      serviceAccountName: vault-audit
+      securityContext:
+        {{- include "ai-agent-platform.podSecurityContext" $ | nindent 8 }}
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: vault-audit
+          image: {{ include "ai-agent-platform.image" (dict "repository" $va.image.repository "tag" $va.image.tag "global" .Values.global) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $va.port }}
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes"
+            - name: JAVA_OPTS
+              value: {{ $va.javaOpts | quote }}
+            - name: SPRING_DATASOURCE_URL
+              value: {{ $va.database.url | quote }}
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $va.database.secretName }}
+                  key: username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $va.database.secretName }}
+                  key: password
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: {{ $va.kafka.bootstrapServers | quote }}
+            - name: SPRING_KAFKA_CONSUMER_GROUP_ID
+              value: {{ $va.kafka.consumerGroupId | quote }}
+            - name: SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET
+              value: "earliest"
+            - name: KAFKA_TOPIC_AUDIT_EVENTS
+              value: {{ $va.kafka.topics.auditEvents | quote }}
+            - name: KAFKA_TOPIC_COMPLIANCE_EVENTS
+              value: {{ $va.kafka.topics.complianceEvents | quote }}
+            - name: AUDIT_DATA_PATH
+              value: "/data/audit"
+          resources:
+            {{- toYaml $va.resources | nindent 12 }}
+          {{- include "ai-agent-platform.livenessProbe" $ | nindent 10 }}
+          {{- include "ai-agent-platform.readinessProbe" $ | nindent 10 }}
+          {{- include "ai-agent-platform.startupProbe" $ | nindent 10 }}
+          {{- if $va.persistence.enabled }}
+          volumeMounts:
+            - name: audit-data
+              mountPath: /data/audit
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      {{- if $va.persistence.enabled }}
+      volumes:
+        - name: audit-data
+          persistentVolumeClaim:
+            claimName: vault-audit-data
+      {{- end }}
+      {{- include "ai-agent-platform.podAntiAffinity" (dict "name" "vault-audit") | nindent 6 }}

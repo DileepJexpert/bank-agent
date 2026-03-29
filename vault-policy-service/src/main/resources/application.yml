@@ -1,0 +1,55 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: vault-policy-service
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 5000ms
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+
+vault:
+  opa:
+    url: ${OPA_URL:http://localhost:8181}
+    policy-path: /v1/data/agent/authz
+  policy:
+    git-path: ${POLICY_GIT_PATH:classpath:policies}
+    file-path: ${POLICY_FILE_PATH:src/main/resources/policies}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.idfcfirstbank.agent.vault.policy: DEBUG
+    org.springframework.web.client: INFO

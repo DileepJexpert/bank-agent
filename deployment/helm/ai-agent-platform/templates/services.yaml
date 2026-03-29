@@ -1,0 +1,138 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: {{ .Values.namespaces.gateway.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "api-gateway" "context" $) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.gateway.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "ai-agent-platform.selectorLabels" (dict "name" "api-gateway") | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault-identity
+  namespace: {{ .Values.namespaces.vault.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "vault-identity" "context" $) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.vaultIdentity.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "ai-agent-platform.selectorLabels" (dict "name" "vault-identity") | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault-policy
+  namespace: {{ .Values.namespaces.vault.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "vault-policy" "context" $) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.vaultPolicy.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "ai-agent-platform.selectorLabels" (dict "name" "vault-policy") | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault-audit
+  namespace: {{ .Values.namespaces.vault.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "vault-audit" "context" $) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.vaultAudit.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "ai-agent-platform.selectorLabels" (dict "name" "vault-audit") | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator
+  namespace: {{ .Values.namespaces.agents.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "orchestrator" "context" $) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.orchestrator.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "ai-agent-platform.selectorLabels" (dict "name" "orchestrator") | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: account-agent
+  namespace: {{ .Values.namespaces.agents.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "account-agent" "context" $) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.accountAgent.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "ai-agent-platform.selectorLabels" (dict "name" "account-agent") | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: core-banking-mcp
+  namespace: {{ .Values.namespaces.mcpServers.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "core-banking-mcp" "context" $) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.coreBankingMcp.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "ai-agent-platform.selectorLabels" (dict "name" "core-banking-mcp") | nindent 4 }}
+---
+{{- if .Values.configServer.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: config-server
+  namespace: {{ .Values.namespaces.admin.name }}
+  labels:
+    {{- include "ai-agent-platform.serviceLabels" (dict "name" "config-server" "context" $) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.configServer.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "ai-agent-platform.selectorLabels" (dict "name" "config-server") | nindent 4 }}
+{{- end }}

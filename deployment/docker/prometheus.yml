@@ -1,0 +1,44 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'api-gateway'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['api-gateway:8080']
+
+  - job_name: 'vault-identity'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['vault-identity:8081']
+
+  - job_name: 'vault-policy'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['vault-policy:8082']
+
+  - job_name: 'vault-audit'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['vault-audit:8083']
+
+  - job_name: 'orchestrator'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['orchestrator:8084']
+
+  - job_name: 'account-agent'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['account-agent:8085']
+
+  - job_name: 'core-banking-mcp'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['core-banking-mcp:8086']
+
+  - job_name: 'config-server'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['config-server:8888']

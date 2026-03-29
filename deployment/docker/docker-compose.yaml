@@ -1,0 +1,425 @@
+version: "3.9"
+
+# =============================================================================
+# AI Agent Platform - Local Development Docker Compose
+# =============================================================================
+# Usage:
+#   docker compose up -d                  # Start all services
+#   docker compose up -d postgres redis   # Start infrastructure only
+#   docker compose logs -f orchestrator   # Follow logs for a service
+#   docker compose down -v                # Stop and remove volumes
+
+x-common-env: &common-env
+  SPRING_PROFILES_ACTIVE: docker
+  JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -Xms128m"
+
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 15s
+  timeout: 5s
+  retries: 5
+  start_period: 60s
+
+services:
+  # ---------------------------------------------------------------------------
+  # Infrastructure
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: platform-postgres
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform_dev_password
+      POSTGRES_MULTIPLE_DATABASES: vault_identity,vault_policy,vault_audit,account_agent,core_banking
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform"]
+      <<: *healthcheck-defaults
+      start_period: 15s
+    networks:
+      - platform-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: platform-redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      <<: *healthcheck-defaults
+      start_period: 10s
+    networks:
+      - platform-network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.3
+    container_name: platform-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      <<: *healthcheck-defaults
+      start_period: 15s
+    networks:
+      - platform-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: platform-kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "29092:29092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      <<: *healthcheck-defaults
+      start_period: 30s
+    networks:
+      - platform-network
+
+  # ---------------------------------------------------------------------------
+  # Config Server
+  # ---------------------------------------------------------------------------
+  config-server:
+    image: ai-agent-platform/config-server:1.0.0-SNAPSHOT
+    container_name: platform-config-server
+    environment:
+      <<: *common-env
+      SPRING_PROFILES_ACTIVE: docker,native
+    ports:
+      - "8888:8888"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8888/actuator/health || exit 1"]
+      <<: *healthcheck-defaults
+    networks:
+      - platform-network
+
+  # ---------------------------------------------------------------------------
+  # Gateway
+  # ---------------------------------------------------------------------------
+  api-gateway:
+    image: ai-agent-platform/api-gateway:1.0.0-SNAPSHOT
+    container_name: platform-api-gateway
+    depends_on:
+      config-server:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      SPRING_CLOUD_CONFIG_URI: http://config-server:8888
+      VAULT_IDENTITY_HOST: vault-identity
+      VAULT_POLICY_HOST: vault-policy
+      VAULT_AUDIT_HOST: vault-audit
+      ORCHESTRATOR_HOST: orchestrator
+      ACCOUNT_AGENT_HOST: account-agent
+      CORE_BANKING_MCP_HOST: core-banking-mcp
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
+      <<: *healthcheck-defaults
+    networks:
+      - platform-network
+
+  # ---------------------------------------------------------------------------
+  # Vault Services
+  # ---------------------------------------------------------------------------
+  vault-identity:
+    image: ai-agent-platform/vault-identity:1.0.0-SNAPSHOT
+    container_name: platform-vault-identity
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/vault_identity
+      SPRING_DATASOURCE_USERNAME: platform
+      SPRING_DATASOURCE_PASSWORD: platform_dev_password
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      JWT_SECRET: dev-jwt-secret-not-for-production-use-replace-me
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/actuator/health || exit 1"]
+      <<: *healthcheck-defaults
+    networks:
+      - platform-network
+
+  vault-policy:
+    image: ai-agent-platform/vault-policy:1.0.0-SNAPSHOT
+    container_name: platform-vault-policy
+    depends_on:
+      postgres:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/vault_policy
+      SPRING_DATASOURCE_USERNAME: platform
+      SPRING_DATASOURCE_PASSWORD: platform_dev_password
+      OPA_SIDECAR_URL: http://opa:8181
+    ports:
+      - "8082:8082"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/actuator/health || exit 1"]
+      <<: *healthcheck-defaults
+    networks:
+      - platform-network
+
+  opa:
+    image: openpolicyagent/opa:0.60.0-envoy
+    container_name: platform-opa
+    command:
+      - "run"
+      - "--server"
+      - "--addr=0.0.0.0:8181"
+      - "--log-level=info"
+      - "--log-format=json"
+    ports:
+      - "8181:8181"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8181/health || exit 1"]
+      <<: *healthcheck-defaults
+      start_period: 10s
+    networks:
+      - platform-network
+
+  vault-audit:
+    image: ai-agent-platform/vault-audit:1.0.0-SNAPSHOT
+    container_name: platform-vault-audit
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/vault_audit
+      SPRING_DATASOURCE_USERNAME: platform
+      SPRING_DATASOURCE_PASSWORD: platform_dev_password
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_KAFKA_CONSUMER_GROUP_ID: vault-audit-group
+      SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET: earliest
+      KAFKA_TOPIC_AUDIT_EVENTS: audit-events
+      KAFKA_TOPIC_COMPLIANCE_EVENTS: compliance-events
+      AUDIT_DATA_PATH: /data/audit
+    ports:
+      - "8083:8083"
+    volumes:
+      - audit-data:/data/audit
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/actuator/health || exit 1"]
+      <<: *healthcheck-defaults
+    networks:
+      - platform-network
+
+  # ---------------------------------------------------------------------------
+  # Agent Services
+  # ---------------------------------------------------------------------------
+  orchestrator:
+    image: ai-agent-platform/orchestrator:1.0.0-SNAPSHOT
+    container_name: platform-orchestrator
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+      vault-identity:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      LLM_PROVIDER: anthropic
+      LLM_ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-placeholder}
+      LLM_OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-placeholder}
+      LLM_MODEL: claude-sonnet-4-20250514
+      LLM_MAX_TOKENS: "4096"
+      LLM_TEMPERATURE: "0.1"
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      VAULT_IDENTITY_URL: http://vault-identity:8081
+      VAULT_POLICY_URL: http://vault-policy:8082
+      VAULT_AUDIT_URL: http://vault-audit:8083
+      ACCOUNT_AGENT_URL: http://account-agent:8085
+      CORE_BANKING_MCP_URL: http://core-banking-mcp:8086
+    ports:
+      - "8084:8084"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8084/actuator/health || exit 1"]
+      <<: *healthcheck-defaults
+    networks:
+      - platform-network
+
+  account-agent:
+    image: ai-agent-platform/account-agent:1.0.0-SNAPSHOT
+    container_name: platform-account-agent
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/account_agent
+      SPRING_DATASOURCE_USERNAME: platform
+      SPRING_DATASOURCE_PASSWORD: platform_dev_password
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      VAULT_IDENTITY_URL: http://vault-identity:8081
+      VAULT_POLICY_URL: http://vault-policy:8082
+      CORE_BANKING_MCP_URL: http://core-banking-mcp:8086
+    ports:
+      - "8085:8085"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8085/actuator/health || exit 1"]
+      <<: *healthcheck-defaults
+    networks:
+      - platform-network
+
+  # ---------------------------------------------------------------------------
+  # MCP Servers
+  # ---------------------------------------------------------------------------
+  core-banking-mcp:
+    image: ai-agent-platform/core-banking-mcp:1.0.0-SNAPSHOT
+    container_name: platform-core-banking-mcp
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/core_banking
+      SPRING_DATASOURCE_USERNAME: platform
+      SPRING_DATASOURCE_PASSWORD: platform_dev_password
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      VAULT_AUDIT_URL: http://vault-audit:8083
+    ports:
+      - "8086:8086"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8086/actuator/health || exit 1"]
+      <<: *healthcheck-defaults
+    networks:
+      - platform-network
+
+  # ---------------------------------------------------------------------------
+  # Monitoring (optional for local dev)
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.49.1
+    container_name: platform-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus-data:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      <<: *healthcheck-defaults
+      start_period: 15s
+    networks:
+      - platform-network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:10.3.1
+    container_name: platform-grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
+      <<: *healthcheck-defaults
+      start_period: 30s
+    networks:
+      - platform-network
+    profiles:
+      - monitoring
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  kafka-data:
+    driver: local
+  zookeeper-data:
+    driver: local
+  zookeeper-log:
+    driver: local
+  audit-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  platform-network:
+    driver: bridge
+    name: ai-agent-platform
