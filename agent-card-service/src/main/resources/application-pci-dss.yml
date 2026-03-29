@@ -1,0 +1,42 @@
+# PCI-DSS Enhanced Security Profile
+# Activated via spring.profiles.active=pci-dss
+# Applies additional security controls for card data handling.
+
+server:
+  servlet:
+    session:
+      cookie:
+        secure: true
+        http-only: true
+        same-site: strict
+  error:
+    include-message: never
+    include-stacktrace: never
+
+# --- Disable environment endpoint to prevent exposure of secrets ---
+management:
+  endpoint:
+    env:
+      enabled: false
+    configprops:
+      enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+
+# --- PCI-DSS Logging: Mask card patterns in console output ---
+logging:
+  level:
+    com.idfcfirstbank.agent.card: INFO
+    org.springframework.web: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %replace(%msg){'\\b([3-6]\\d{3})[- ]?(\\d{4})[- ]?(\\d{4})[- ]?(\\d{4})\\b','XXXX-XXXX-XXXX-$4'}%n"
+
+# --- Redis cache with short TTL for PCI compliance ---
+spring:
+  cache:
+    type: redis
+    redis:
+      time-to-live: 60000  # 1 minute max for card-related cache
+      cache-null-values: false

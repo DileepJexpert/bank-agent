@@ -1,0 +1,93 @@
+server:
+  port: 8088
+
+spring:
+  application:
+    name: agent-card-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:default,pci-dss}
+
+  # --- Spring AI LLM Configuration ---
+  ai:
+    anthropic:
+      api-key: ${LLM_API_KEY:}
+      chat:
+        options:
+          model: claude-sonnet-4-20250514
+          max-tokens: 4096
+          temperature: 0.7
+
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      chat:
+        options:
+          model: gpt-4o
+          max-tokens: 4096
+          temperature: 0.7
+
+  # --- Redis ---
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 5000ms
+
+  # --- Kafka ---
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: card-agent-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.idfcfirstbank.agent.*
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+# --- Agent Platform Configuration ---
+agent:
+  llm:
+    provider: ${LLM_PROVIDER:anthropic}
+    model-name: ${LLM_MODEL:claude-sonnet-4-20250514}
+    api-key: ${LLM_API_KEY:}
+    temperature: 0.7
+    max-tokens: 4096
+    timeout: 30s
+
+  vault:
+    base-url: ${VAULT_POLICY_URL:http://vault-policy-service:8082}
+
+  mcp:
+    card-management-url: ${MCP_CARD_MANAGEMENT_URL:http://mcp-card-management-server:8089}
+    notification-url: ${NOTIFICATION_SERVICE_URL:http://notification-service:8090}
+
+# --- Actuator & Observability ---
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# --- API Docs ---
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+# --- Logging ---
+logging:
+  level:
+    com.idfcfirstbank.agent.card: DEBUG
+    org.springframework.ai: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

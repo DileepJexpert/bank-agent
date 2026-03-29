@@ -6,6 +6,7 @@ import com.idfcfirstbank.agent.vault.identity.model.dto.CustomerVerifyRequest;
 import com.idfcfirstbank.agent.vault.identity.model.dto.TokenValidationResponse;
 import com.idfcfirstbank.agent.vault.identity.service.AgentAuthService;
 import com.idfcfirstbank.agent.vault.identity.service.CustomerAuthService;
+import com.idfcfirstbank.agent.vault.identity.service.JwksService;
 import com.idfcfirstbank.agent.vault.identity.service.TokenService;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
@@ -14,7 +15,9 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -34,6 +37,7 @@ public class AuthController {
     private final AgentAuthService agentAuthService;
     private final CustomerAuthService customerAuthService;
     private final TokenService tokenService;
+    private final JwksService jwksService;
 
     @PostMapping("/agent/authenticate")
     @Operation(summary = "Authenticate an agent instance",
@@ -106,6 +110,16 @@ public class AuthController {
                 scopes != null ? scopes : List.of(),
                 customerId
         ));
+    }
+
+    @GetMapping(value = "/jwks", produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Get JSON Web Key Set",
+            description = "Returns the public keys used to verify JWTs issued by this service, in JWKS format (RFC 7517)")
+    public ResponseEntity<Map<String, Object>> getJwks() {
+        Map<String, Object> jwks = jwksService.getJwks();
+        return ResponseEntity.ok()
+                .header("Cache-Control", "public, max-age=3600")
+                .body(jwks);
     }
 
     private String extractBearerToken(String authHeader) {

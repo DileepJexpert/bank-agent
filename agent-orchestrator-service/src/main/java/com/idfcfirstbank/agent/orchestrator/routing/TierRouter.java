@@ -132,6 +132,40 @@ public class TierRouter {
     }
 
     /**
+     * Attempt Tier 0 multi-intent detection. Scans the message against all keyword rules
+     * and returns every matching intent (not just the best). This supports messages like
+     * "check my balance and block my card" yielding [BALANCE_INQUIRY, CARD_BLOCK].
+     *
+     * @param message the customer message
+     * @return list of detected intents (may be empty if no rule matches)
+     */
+    public List<DetectedIntent> attemptTier0MultiDetection(String message) {
+        if (message == null || message.isBlank()) {
+            return List.of();
+        }
+
+        List<DetectedIntent> matches = new ArrayList<>();
+        for (Tier0Rule rule : TIER0_RULES) {
+            Matcher matcher = rule.pattern().matcher(message);
+            if (matcher.find()) {
+                matches.add(new DetectedIntent(
+                        rule.intent(),
+                        rule.confidence(),
+                        0,  // Tier 0
+                        extractSimpleParameters(message, rule.intent())
+                ));
+            }
+        }
+
+        if (!matches.isEmpty()) {
+            log.info("Tier 0 multi-detection matched {} intent(s): {}", matches.size(),
+                    matches.stream().map(DetectedIntent::intent).toList());
+        }
+
+        return matches;
+    }
+
+    /**
      * Determine the appropriate tier for a given message complexity.
      *
      * @param message          the customer message

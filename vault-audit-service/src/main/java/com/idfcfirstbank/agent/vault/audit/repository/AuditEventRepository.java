@@ -51,4 +51,7 @@ public interface AuditEventRepository extends JpaRepository<AuditEventEntity, UU
     List<Object[]> countByAgentIdSince(@Param("since") Instant since);
 
     long countByTimestampAfter(Instant since);
+
+    @Query("SELECT e FROM AuditEventEntity e WHERE e.correlationId = :correlationId ORDER BY e.timestamp ASC")
+    List<AuditEventEntity> findByCorrelationIdOrderByTimestampAsc(@Param("correlationId") UUID correlationId);
 }

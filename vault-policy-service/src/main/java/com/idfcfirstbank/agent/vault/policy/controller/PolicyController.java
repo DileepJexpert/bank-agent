@@ -15,7 +15,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestClient;
 
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -51,11 +55,77 @@ public class PolicyController {
         return ResponseEntity.ok(Map.of("status", "reloaded", "message", "Policies reloaded successfully"));
     }
 
+    @PostMapping("/evaluate/batch")
+    @Operation(summary = "Batch evaluate policy requests",
+            description = "Evaluates multiple agent actions against OPA policies in a single request and returns a list of decisions")
+    public ResponseEntity<List<PolicyEvaluationResponse>> evaluateBatch(
+            @Valid @RequestBody List<PolicyEvaluationRequest> requests) {
+        log.info("Batch policy evaluation request: {} items", requests.size());
+
+        List<PolicyEvaluationResponse> responses = new ArrayList<>(requests.size());
+        for (PolicyEvaluationRequest request : requests) {
+            log.debug("Batch evaluating: agent={}, action={}, resource={}",
+                    request.agentId(), request.action(), request.resource());
+            PolicyEvaluationResponse response = evaluationService.evaluate(request);
+            responses.add(response);
+        }
+
+        long denyCount = responses.stream()
+                .filter(r -> r.decision() == PolicyEvaluationResponse.Decision.DENY)
+                .count();
+        log.info("Batch policy evaluation complete: {} total, {} denied", responses.size(), denyCount);
+
+        return ResponseEntity.ok(responses);
+    }
+
+    @GetMapping("/health")
+    @Operation(summary = "Policy engine health check",
+            description = "Returns OPA engine health status and the count of currently loaded policies")
+    public ResponseEntity<Map<String, Object>> healthCheck() {
+        Map<String, Object> health = new LinkedHashMap<>();
+        List<String> activePolicies = reloadService.listActivePolicies();
+
+        health.put("status", "UP");
+        health.put("timestamp", Instant.now().toString());
+        health.put("loadedPolicyCount", activePolicies.size());
+        health.put("activePolicies", activePolicies);
+
+        // Check OPA connectivity
+        boolean opaReachable = checkOpaHealth();
+        health.put("opaEngine", opaReachable ? "CONNECTED" : "UNREACHABLE");
+
+        if (!opaReachable) {
+            health.put("status", "DEGRADED");
+            health.put("warning", "OPA engine is unreachable. Policy evaluations will fail-closed (DENY).");
+        }
+
+        return ResponseEntity.ok(health);
+    }
+
     @GetMapping("/list")
     @Operation(summary = "List active policies",
             description = "Returns a list of all currently loaded and active policy identifiers")
     public ResponseEntity<List<String>> listPolicies() {
         List<String> policies = reloadService.listActivePolicies();
         return ResponseEntity.ok(policies);
+    }
+
+    /**
+     * Checks OPA engine health by calling its health endpoint.
+     */
+    private boolean checkOpaHealth() {
+        try {
+            RestClient opaClient = RestClient.builder()
+                    .baseUrl("http://localhost:8181")
+                    .build();
+            opaClient.get()
+                    .uri("/health")
+                    .retrieve()
+                    .toBodilessEntity();
+            return true;
+        } catch (Exception e) {
+            log.warn("OPA health check failed: {}", e.getMessage());
+            return false;
+        }
     }
 }

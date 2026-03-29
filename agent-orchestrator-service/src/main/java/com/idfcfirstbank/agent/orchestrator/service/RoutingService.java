@@ -12,14 +12,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Routes detected intents to the appropriate domain agent service.
  * <p>
- * Uses RestTemplate to make synchronous calls to downstream agent services.
- * Each intent maps to a specific agent type and endpoint.
+ * Supports multi-intent routing: when multiple intents are detected, each intent
+ * is routed sequentially and responses are aggregated.
+ * <p>
+ * When confidence is below threshold (CLARIFICATION_NEEDED), returns a clarifying
+ * question instead of routing to a downstream service.
  */
 @Slf4j
 @Service
@@ -31,11 +34,11 @@ public class RoutingService {
     @Value("${agent.routing.account-service-url:http://agent-account-service:8085}")
     private String accountServiceUrl;
 
-    @Value("${agent.routing.card-service-url:http://agent-card-service:8087}")
+    @Value("${agent.routing.card-service-url:http://agent-card-service:8088}")
     private String cardServiceUrl;
 
-    @Value("${agent.routing.loan-service-url:http://agent-loan-service:8088}")
-    private String loanServiceUrl;
+    @Value("${agent.routing.loans-service-url:http://agent-loans-service:8090}")
+    private String loansServiceUrl;
 
     /** Intents handled by the Account Agent. */
     private static final Set<String> ACCOUNT_INTENTS = Set.of(
@@ -46,16 +49,55 @@ public class RoutingService {
 
     /** Intents handled by the Card Agent. */
     private static final Set<String> CARD_INTENTS = Set.of(
-            "CARD_BLOCK", "CARD_LIMIT", "CARD_STATEMENT", "CARD_DISPUTE"
+            "CARD_BLOCK", "CARD_ACTIVATE", "CARD_LIMIT", "CARD_STATEMENT",
+            "CARD_DISPUTE", "REWARD_POINTS", "DISPUTE_RAISE"
     );
 
-    /** Intents handled by the Loan Agent. */
+    /** Intents handled by the Loans Agent. */
     private static final Set<String> LOAN_INTENTS = Set.of(
-            "LOAN_INQUIRY", "LOAN_APPLICATION", "LOAN_REPAYMENT", "LOAN_FORECLOSURE"
+            "LOAN_INQUIRY", "LOAN_APPLICATION", "LOAN_REPAYMENT", "LOAN_FORECLOSURE",
+            "LOAN_ELIGIBILITY", "LOAN_EMI_QUERY", "LOAN_PREPAYMENT"
     );
 
     /**
-     * Route the detected intent to the appropriate domain agent and return the response.
+     * Route multiple detected intents sequentially and aggregate responses.
+     *
+     * @param intents   the list of detected intents
+     * @param sessionId the conversation session identifier
+     * @param request   the original chat request
+     * @return aggregated agent response text
+     */
+    public String routeToAgents(List<DetectedIntent> intents, String sessionId, ChatRequest request) {
+        if (intents == null || intents.isEmpty()) {
+            return "I'm not sure I understand your request. Could you please rephrase or provide more details?";
+        }
+
+        // Check for clarification needed
+        boolean anyClarificationNeeded = intents.stream()
+                .anyMatch(i -> "CLARIFICATION_NEEDED".equals(i.intent()));
+        if (anyClarificationNeeded) {
+            return handleClarificationNeeded(request.message());
+        }
+
+        // Single intent: route directly
+        if (intents.size() == 1) {
+            return routeToAgent(intents.getFirst(), sessionId, request);
+        }
+
+        // Multi-intent: route sequentially and aggregate
+        log.info("Multi-intent routing: {} intents for sessionId={}", intents.size(), sessionId);
+        List<String> responses = new ArrayList<>();
+        for (DetectedIntent intent : intents) {
+            String response = routeToAgent(intent, sessionId, request);
+            responses.add(response);
+        }
+
+        return responses.stream()
+                .collect(Collectors.joining("\n\n---\n\n"));
+    }
+
+    /**
+     * Route a single detected intent to the appropriate domain agent and return the response.
      *
      * @param intent    the detected intent
      * @param sessionId the conversation session identifier
@@ -66,13 +108,17 @@ public class RoutingService {
         String intentName = intent.intent().toUpperCase();
         log.info("Routing intent={} for sessionId={}", intentName, sessionId);
 
+        if ("CLARIFICATION_NEEDED".equals(intentName)) {
+            return handleClarificationNeeded(request.message());
+        }
+
         try {
             if (ACCOUNT_INTENTS.contains(intentName)) {
                 return callAccountAgent(intent, sessionId, request);
             } else if (CARD_INTENTS.contains(intentName)) {
                 return callAgentService(cardServiceUrl + "/api/v1/cards/chat", intent, sessionId, request);
             } else if (LOAN_INTENTS.contains(intentName)) {
-                return callAgentService(loanServiceUrl + "/api/v1/loans/chat", intent, sessionId, request);
+                return callAgentService(loansServiceUrl + "/api/v1/loans/chat", intent, sessionId, request);
             } else if ("GENERAL_INQUIRY".equals(intentName)) {
                 return handleGeneralInquiry(request.message());
             } else if ("COMPLAINT".equals(intentName)) {
@@ -97,7 +143,31 @@ public class RoutingService {
         if (LOAN_INTENTS.contains(intentUpper)) return "LOAN";
         if ("GENERAL_INQUIRY".equals(intentUpper)) return "ORCHESTRATOR";
         if ("COMPLAINT".equals(intentUpper)) return "ORCHESTRATOR";
+        if ("CLARIFICATION_NEEDED".equals(intentUpper)) return "ORCHESTRATOR";
         return "ORCHESTRATOR";
+    }
+
+    /**
+     * Resolve agent types for multiple intents.
+     */
+    public String resolveAgentTypes(List<DetectedIntent> intents) {
+        if (intents == null || intents.isEmpty()) {
+            return "ORCHESTRATOR";
+        }
+        if (intents.size() == 1) {
+            return resolveAgentType(intents.getFirst().intent());
+        }
+        return intents.stream()
+                .map(i -> resolveAgentType(i.intent()))
+                .distinct()
+                .collect(Collectors.joining(","));
+    }
+
+    private String handleClarificationNeeded(String originalMessage) {
+        return "I'd like to help you, but I'm not entirely sure what you need. "
+                + "Could you please provide more details about your request? "
+                + "For example, I can help with account balances, fund transfers, card services, "
+                + "loans, fixed deposits, and more.";
     }
 
     private String callAccountAgent(DetectedIntent intent, String sessionId, ChatRequest request) {

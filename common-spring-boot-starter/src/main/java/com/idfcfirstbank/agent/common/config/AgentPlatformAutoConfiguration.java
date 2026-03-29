@@ -1,7 +1,12 @@
 package com.idfcfirstbank.agent.common.config;
 
+import com.idfcfirstbank.agent.common.audit.AuditAspect;
 import com.idfcfirstbank.agent.common.exception.GlobalExceptionHandler;
+import com.idfcfirstbank.agent.common.health.KafkaHealthIndicator;
+import com.idfcfirstbank.agent.common.health.VaultHealthIndicator;
 import com.idfcfirstbank.agent.common.kafka.AuditEventPublisher;
+import com.idfcfirstbank.agent.common.metrics.AgentMetrics;
+import com.idfcfirstbank.agent.common.metrics.AgentMetricsConfig;
 import com.idfcfirstbank.agent.common.security.JwtTokenProvider;
 import com.idfcfirstbank.agent.common.security.ServiceAuthenticationFilter;
 import com.idfcfirstbank.agent.common.vault.VaultClient;
@@ -23,8 +28,16 @@ import org.springframework.context.annotation.Import;
         ServiceAuthenticationFilter.class,
         VaultClient.class,
         AuditEventPublisher.class,
-        GlobalExceptionHandler.class
+        GlobalExceptionHandler.class,
+        AuditAspect.class,
+        AgentMetricsConfig.class,
+        AgentMetrics.class
 })
-@ComponentScan(basePackages = "com.idfcfirstbank.agent.common")
+@ComponentScan(basePackages = {
+        "com.idfcfirstbank.agent.common",
+        "com.idfcfirstbank.agent.common.audit",
+        "com.idfcfirstbank.agent.common.health",
+        "com.idfcfirstbank.agent.common.metrics"
+})
 public class AgentPlatformAutoConfiguration {
 }

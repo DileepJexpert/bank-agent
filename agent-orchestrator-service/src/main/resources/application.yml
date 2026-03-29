@@ -70,8 +70,8 @@ agent:
 
   routing:
     account-service-url: ${ACCOUNT_SERVICE_URL:http://agent-account-service:8085}
-    card-service-url: ${CARD_SERVICE_URL:http://agent-card-service:8087}
-    loan-service-url: ${LOAN_SERVICE_URL:http://agent-loan-service:8088}
+    card-service-url: ${CARD_SERVICE_URL:http://agent-card-service:8088}
+    loans-service-url: ${LOANS_SERVICE_URL:http://agent-loans-service:8090}
 
 # --- Actuator & Observability ---
 management:

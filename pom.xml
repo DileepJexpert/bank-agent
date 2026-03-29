@@ -34,9 +34,12 @@
         <module>vault-identity-service</module>
         <module>vault-policy-service</module>
         <module>vault-audit-service</module>
+        <module>vault-anomaly-service</module>
         <module>agent-orchestrator-service</module>
         <module>agent-account-service</module>
+        <module>agent-card-service</module>
         <module>mcp-core-banking-server</module>
+        <module>mcp-card-management-server</module>
     </modules>
 
     <properties>

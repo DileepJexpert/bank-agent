@@ -1,0 +1,91 @@
+server:
+  port: 8089
+
+spring:
+  application:
+    name: mcp-card-management-server
+
+  # --- Redis (used for caching) ---
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 5000ms
+
+  # --- Cache ---
+  cache:
+    type: redis
+    redis:
+      time-to-live: 180000  # 3 minutes
+      cache-null-values: false
+
+# --- Card Management Backend System ---
+card-backend:
+  base-url: ${CARD_BACKEND_BASE_URL:http://localhost:9091}
+
+# --- Resilience4j Configuration ---
+resilience4j:
+  circuitbreaker:
+    instances:
+      cardBackend:
+        register-health-indicator: true
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 3
+        wait-duration-in-open-state: 30s
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 80
+        slow-call-duration-threshold: 5s
+        record-exceptions:
+          - org.springframework.web.reactive.function.client.WebClientRequestException
+          - java.util.concurrent.TimeoutException
+          - java.io.IOException
+
+  retry:
+    instances:
+      cardBackend:
+        max-attempts: 3
+        wait-duration: 1s
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - org.springframework.web.reactive.function.client.WebClientRequestException
+          - java.util.concurrent.TimeoutException
+
+  ratelimiter:
+    instances:
+      cardBackend:
+        limit-for-period: 100
+        limit-refresh-period: 1s
+        timeout-duration: 5s
+
+# --- Vault ---
+agent:
+  vault:
+    base-url: ${VAULT_POLICY_URL:http://vault-policy-service:8082}
+
+# --- Actuator & Observability ---
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  health:
+    circuitbreakers:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# --- Logging ---
+logging:
+  level:
+    com.idfcfirstbank.agent.mcp.cardmgmt: DEBUG
+    io.github.resilience4j: INFO
+  pattern:
+    # Mask any accidental card number leakage in logs
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %replace(%msg){'\\b([3-6]\\d{3})[- ]?(\\d{4})[- ]?(\\d{4})[- ]?(\\d{4})\\b','XXXX-XXXX-XXXX-$4'}%n"

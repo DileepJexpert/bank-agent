@@ -10,9 +10,14 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
 @Component
@@ -34,6 +39,15 @@ public class AuditEventConsumer {
     private final AuditEventRepository auditEventRepository;
     private final ObjectMapper objectMapper;
 
+    /**
+     * Holds the SHA-256 hash of the last persisted audit event for hash chain continuity.
+     * Initialized to a zero hash (genesis). On startup, ideally this should be seeded
+     * from the most recent event in the database; kept in-memory for performance.
+     */
+    private final AtomicReference<String> lastEventHash = new AtomicReference<>(
+            "0000000000000000000000000000000000000000000000000000000000000000"
+    );
+
     @KafkaListener(
             topics = "vault.audit.events",
             groupId = "${spring.kafka.consumer.group-id:vault-audit-consumer}",
@@ -45,6 +59,20 @@ public class AuditEventConsumer {
 
         try {
             JsonNode eventNode = objectMapper.readTree(record.value());
+
+            // Parse optional correlation ID for tracing full customer interactions
+            UUID correlationId = null;
+            String corrIdStr = getTextOrNull(eventNode, "correlationId");
+            if (corrIdStr != null) {
+                try {
+                    correlationId = UUID.fromString(corrIdStr);
+                } catch (IllegalArgumentException e) {
+                    log.warn("Invalid correlationId format: {}", corrIdStr);
+                }
+            }
+
+            // Compute hash chain: set prev_event_hash to the hash of the last event
+            String prevHash = lastEventHash.get();
 
             AuditEventEntity entity = AuditEventEntity.builder()
                     .eventId(UUID.randomUUID().toString())
@@ -59,11 +87,19 @@ public class AuditEventConsumer {
                     .requestHash(getTextOrNull(eventNode, "requestHash"))
                     .responseHash(getTextOrNull(eventNode, "responseHash"))
                     .latencyMs(getLongOrNull(eventNode, "evaluationTimeMs"))
+                    .prevEventHash(prevHash)
+                    .correlationId(correlationId)
                     .build();
 
             auditEventRepository.save(entity);
-            log.debug("Persisted audit event: eventId={}, agent={}, action={}",
-                    entity.getEventId(), entity.getAgentId(), entity.getAction());
+
+            // Update the hash chain with the current event's hash
+            String currentHash = computeEventHash(entity);
+            lastEventHash.set(currentHash);
+
+            log.debug("Persisted audit event: eventId={}, agent={}, action={}, chainHash={}",
+                    entity.getEventId(), entity.getAgentId(), entity.getAction(),
+                    currentHash.substring(0, 12) + "...");
 
         } catch (Exception e) {
             log.error("Failed to process audit event: key={}, error={}",
@@ -109,6 +145,35 @@ public class AuditEventConsumer {
         }
 
         return value;
+    }
+
+    /**
+     * Computes a SHA-256 hash of the audit event for hash chain integrity.
+     * The hash covers the event ID, timestamp, agent ID, action, resource,
+     * policy result, and the previous event hash to form a tamper-evident chain.
+     */
+    private String computeEventHash(AuditEventEntity entity) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            String canonical = String.join("|",
+                    nullSafe(entity.getEventId()),
+                    nullSafe(entity.getTimestamp() != null ? entity.getTimestamp().toString() : null),
+                    nullSafe(entity.getAgentId()),
+                    nullSafe(entity.getAction()),
+                    nullSafe(entity.getResource()),
+                    nullSafe(entity.getPolicyResult()),
+                    nullSafe(entity.getPrevEventHash())
+            );
+            byte[] hashBytes = digest.digest(canonical.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hashBytes);
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 is guaranteed to be available in all Java implementations
+            throw new IllegalStateException("SHA-256 algorithm not available", e);
+        }
+    }
+
+    private String nullSafe(String value) {
+        return value != null ? value : "";
     }
 
     private Instant parseTimestamp(JsonNode node) {

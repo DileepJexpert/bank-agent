@@ -56,25 +56,35 @@ public class ChatController {
         // Record customer message
         sessionService.addMessage(sessionId, "customer", request.message());
 
-        // Detect intent using tiered approach
-        DetectedIntent intent = intentDetectionService.detectIntent(request.message(), sessionId);
-        log.info("Detected intent: intent={}, confidence={}, tier={}",
-                intent.intent(), intent.confidence(), intent.tier());
+        // Detect intents using tiered approach (supports multi-intent)
+        List<DetectedIntent> intents = intentDetectionService.detectIntents(request.message(), sessionId);
+        DetectedIntent primaryIntent = intents.isEmpty()
+                ? new DetectedIntent("UNKNOWN", 0.0, 2, Map.of())
+                : intents.getFirst();
+        log.info("Detected {} intent(s): primary={}, confidence={}, tier={}",
+                intents.size(), primaryIntent.intent(), primaryIntent.confidence(), primaryIntent.tier());
 
-        // Route to appropriate agent and get response
-        String agentResponse = routingService.routeToAgent(intent, sessionId, request);
+        // Check if clarification is needed
+        boolean clarificationNeeded = intents.stream()
+                .anyMatch(i -> "CLARIFICATION_NEEDED".equals(i.intent()));
+
+        // Route to appropriate agent(s) and get aggregated response
+        String agentResponse = routingService.routeToAgents(intents, sessionId, request);
 
         // Record assistant response
         sessionService.addMessage(sessionId, "assistant", agentResponse);
 
-        boolean escalated = intent.tier() >= 3;
+        boolean escalated = primaryIntent.tier() >= 3;
         ChatResponse response = new ChatResponse(
                 sessionId,
                 agentResponse,
-                routingService.resolveAgentType(intent.intent()),
-                intent.intent(),
-                intent.confidence(),
-                escalated
+                routingService.resolveAgentTypes(intents),
+                primaryIntent.intent(),
+                primaryIntent.confidence(),
+                escalated,
+                intents,
+                clarificationNeeded,
+                primaryIntent.tier()
         );
 
         return ResponseEntity.ok(response);

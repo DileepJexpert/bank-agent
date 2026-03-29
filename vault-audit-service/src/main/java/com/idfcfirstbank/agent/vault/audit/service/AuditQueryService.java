@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -44,6 +45,14 @@ public class AuditQueryService {
      */
     public Page<AuditEventEntity> getEventsByAgent(String agentId, Pageable pageable) {
         return auditEventRepository.findByAgentIdOrderByTimestampDesc(agentId, pageable);
+    }
+
+    /**
+     * Gets all audit events sharing the same correlation ID, ordered chronologically.
+     * This traces a full customer interaction across multiple agents and actions.
+     */
+    public List<AuditEventEntity> getEventsByCorrelationId(UUID correlationId) {
+        return auditEventRepository.findByCorrelationIdOrderByTimestampAsc(correlationId);
     }
 
     /**

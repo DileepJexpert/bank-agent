@@ -65,6 +65,12 @@ public class AuditEventEntity {
     @Column(name = "latency_ms")
     private Long latencyMs;
 
+    @Column(name = "prev_event_hash", length = 64)
+    private String prevEventHash;
+
+    @Column(name = "correlation_id")
+    private UUID correlationId;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
