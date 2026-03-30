@@ -26,6 +26,11 @@ class SidebarNavigation extends StatelessWidget {
     _NavItem('/settings', 'Settings', Icons.settings_rounded),
   ];
 
+  static const List<_NavItem> _mcpItems = [
+    _NavItem('/mcp-widgets', 'Customer Widgets', Icons.widgets_rounded),
+    _NavItem('/copilot', 'Branch Co-Pilot', Icons.support_agent_rounded),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -118,6 +123,23 @@ class SidebarNavigation extends StatelessWidget {
                   ),
                 ),
                 ..._items.map((item) => _buildNavItem(context, item, isDark)),
+                const SizedBox(height: 16),
+                Padding(
+                  padding:
+                      const EdgeInsets.only(left: 12, top: 8, bottom: 8),
+                  child: Text(
+                    'MCP WIDGETS',
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.2,
+                      color: isDark
+                          ? AppTheme.darkTextSecondary
+                          : AppTheme.lightTextSecondary,
+                    ),
+                  ),
+                ),
+                ..._mcpItems.map((item) => _buildNavItem(context, item, isDark)),
               ],
             ),
           ),

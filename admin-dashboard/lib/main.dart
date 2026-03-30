@@ -5,6 +5,7 @@ import 'config/theme.dart';
 import 'providers/dashboard_provider.dart';
 import 'providers/agent_provider.dart';
 import 'providers/policy_provider.dart';
+import 'providers/mcp_widget_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/agents_screen.dart';
@@ -12,6 +13,8 @@ import 'screens/policies_screen.dart';
 import 'screens/audit_screen.dart';
 import 'screens/monitoring_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/mcp_widgets_screen.dart';
+import 'screens/copilot_screen.dart';
 import 'widgets/sidebar_navigation.dart';
 
 void main() {
@@ -43,6 +46,7 @@ class _AdminDashboardAppState extends State<AdminDashboardApp> {
         ChangeNotifierProvider(create: (_) => DashboardProvider()),
         ChangeNotifierProvider(create: (_) => AgentProvider()),
         ChangeNotifierProvider(create: (_) => PolicyProvider()),
+        ChangeNotifierProvider(create: (_) => McpWidgetProvider()),
       ],
       child: MaterialApp(
         title: 'AI Agent Platform - Admin Dashboard',
@@ -115,6 +119,10 @@ class _AppShellState extends State<AppShell> {
         return const MonitoringScreen();
       case '/settings':
         return const SettingsScreen();
+      case '/mcp-widgets':
+        return const McpWidgetsScreen();
+      case '/copilot':
+        return const CopilotScreen();
       default:
         return const DashboardScreen();
     }
