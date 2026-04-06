@@ -40,6 +40,11 @@
         <module>agent-card-service</module>
         <module>mcp-core-banking-server</module>
         <module>mcp-card-management-server</module>
+        <module>agent-loans-service</module>
+        <module>agent-wealth-service</module>
+        <module>agent-collections-service</module>
+        <module>agent-fraud-service</module>
+        <module>agent-internal-ops-service</module>
     </modules>
 
     <properties>
