@@ -66,7 +66,7 @@ Allocate sufficient resources in Docker Desktop → Settings → Resources:
 ```bash
 git clone https://github.com/dileepjexpert/bank-agent.git
 cd bank-agent
-git checkout claude/ai-agent-platform-UahWl
+git checkout main
 ```
 
 ---
