@@ -1,0 +1,99 @@
+# =============================================================================
+# LOCAL DEBUG PROFILE - No Docker, No Redis, No Kafka needed
+# =============================================================================
+# Usage:
+#   mvn spring-boot:run -pl agent-orchestrator-service -Dspring-boot.run.profiles=local
+#
+# Or in IntelliJ IDEA:
+#   Run Configuration > Active profiles: local
+#
+# This profile:
+#   - Uses in-memory session storage (no Redis required)
+#   - Disables Kafka auto-config (no Kafka required)
+#   - Disables Vault health checks
+#   - Uses Ollama (Llama 3.1) for AI if running, falls back to keyword matching
+#   - All MCP calls return mock data for demo purposes
+
+server:
+  port: 8084
+
+spring:
+  application:
+    name: agent-orchestrator-service
+
+  # Disable Redis auto-config
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+
+  # Spring AI - Ollama (local LLM)
+  ai:
+    anthropic:
+      enabled: false
+    openai:
+      enabled: false
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        model: ${OLLAMA_MODEL:llama3.1}
+        options:
+          temperature: 0.1
+          num-predict: 500
+
+# AI enabled by default in local profile
+ai:
+  enabled: ${AI_ENABLED:true}
+
+# Agent config
+agent:
+  llm:
+    provider: ${LLM_PROVIDER:ollama}
+    model-name: ${LLM_MODEL:llama3.1}
+    api-key: ${LLM_API_KEY:not-needed-for-ollama}
+    temperature: 0.1
+    max-tokens: 500
+    timeout: 60s
+
+  vault:
+    base-url: http://localhost:8082
+
+  routing:
+    account-service-url: http://localhost:8085
+    card-service-url: http://localhost:8088
+    loans-service-url: http://localhost:8090
+
+  mcp:
+    core-banking-url: http://localhost:8086
+    credit-bureau-url: http://localhost:8091
+
+# Actuator - simplified for local
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+  health:
+    redis:
+      enabled: false
+    kafka:
+      enabled: false
+
+# API Docs
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+# Logging - verbose for debugging
+logging:
+  level:
+    com.idfcfirstbank.agent.orchestrator: DEBUG
+    org.springframework.ai: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.statemachine: WARN
