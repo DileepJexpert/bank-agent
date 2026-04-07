@@ -9,6 +9,8 @@ import com.idfcfirstbank.agent.orchestrator.routing.TierRouter;
 import com.idfcfirstbank.agent.orchestrator.service.AiIntentDetector;
 import com.idfcfirstbank.agent.orchestrator.service.AiIntentDetector.AiIntentResult;
 import com.idfcfirstbank.agent.orchestrator.service.AiResponseGenerator;
+import com.idfcfirstbank.agent.orchestrator.service.AiToolSelector;
+import com.idfcfirstbank.agent.orchestrator.service.AiToolSelector.ToolSelectionResult;
 import com.idfcfirstbank.agent.orchestrator.service.IntentDetectionService;
 import com.idfcfirstbank.agent.orchestrator.service.LanguageDetectionService;
 import com.idfcfirstbank.agent.orchestrator.service.RoutingService;
@@ -21,6 +23,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -44,6 +47,7 @@ public class ChatController {
     private final LanguageDetectionService languageDetectionService;
     private final AiIntentDetector aiIntentDetector;
     private final AiResponseGenerator aiResponseGenerator;
+    private final AiToolSelector aiToolSelector;
     private final boolean aiEnabled;
     private final String aiModelName;
 
@@ -57,7 +61,8 @@ public class ChatController {
             @Value("${spring.ai.ollama.chat.model:llama3.1}") String aiModelName,
             // Optional AI beans - only present when ai.enabled=true
             @org.springframework.lang.Nullable AiIntentDetector aiIntentDetector,
-            @org.springframework.lang.Nullable AiResponseGenerator aiResponseGenerator) {
+            @org.springframework.lang.Nullable AiResponseGenerator aiResponseGenerator,
+            @org.springframework.lang.Nullable AiToolSelector aiToolSelector) {
         this.intentDetectionService = intentDetectionService;
         this.routingService = routingService;
         this.sessionService = sessionService;
@@ -67,6 +72,7 @@ public class ChatController {
         this.aiModelName = aiModelName;
         this.aiIntentDetector = aiIntentDetector;
         this.aiResponseGenerator = aiResponseGenerator;
+        this.aiToolSelector = aiToolSelector;
 
         if (aiEnabled && aiIntentDetector != null) {
             log.info("AI-powered intent detection ENABLED with model: {}", aiModelName);
@@ -139,15 +145,40 @@ public class ChatController {
         boolean clarificationNeeded = intents.stream()
                 .anyMatch(i -> "CLARIFICATION_NEEDED".equals(i.intent()));
 
-        // Route to appropriate agent(s) and get aggregated response
-        String agentResponse = routingService.routeToAgents(intents, sessionId, request);
+        // Route to appropriate agent(s) and get response
+        String agentResponse;
+        List<String> toolsCalled;
 
-        // If AI is enabled, generate a natural language response
-        if (aiEnabled && aiResponseGenerator != null && !clarificationNeeded) {
+        // Tier 2+ with AI: use AiToolSelector (LLM decides which tools to call)
+        boolean usedToolSelector = false;
+        if (aiEnabled && aiToolSelector != null && !clarificationNeeded && primaryIntent.tier() >= 2) {
+            log.info("Tier 2 query — using AI Tool Selector (LLM function calling)");
+            ToolSelectionResult toolResult = aiToolSelector.process(
+                    request.customerId(), request.message(), detectedLanguage);
+            if (toolResult.success() && toolResult.response() != null) {
+                agentResponse = toolResult.response();
+                toolsCalled = new ArrayList<>(toolResult.toolsCalled());
+                toolsCalled.add("aiToolSelector");
+                usedToolSelector = true;
+                log.info("AI Tool Selector succeeded: {} tools called", toolResult.toolsCalled().size());
+            } else {
+                log.warn("AI Tool Selector failed, falling back to rule-based routing");
+                agentResponse = routingService.routeToAgents(intents, sessionId, request);
+                toolsCalled = routingService.getToolsCalled();
+            }
+        } else {
+            // Tier 0/1 or AI disabled: use rule-based routing
+            agentResponse = routingService.routeToAgents(intents, sessionId, request);
+            toolsCalled = routingService.getToolsCalled();
+        }
+
+        // For Tier 0/1 with AI enabled, generate natural language response
+        if (aiEnabled && aiResponseGenerator != null && !clarificationNeeded && !usedToolSelector) {
             String naturalResponse = aiResponseGenerator.generate(
                     request.message(), detectedLanguage, agentResponse);
             if (naturalResponse != null && !naturalResponse.isBlank()) {
                 agentResponse = naturalResponse;
+                toolsCalled.add("aiResponseGenerator");
             }
         }
 
@@ -155,10 +186,6 @@ public class ChatController {
         sessionService.addMessage(sessionId, "assistant", agentResponse);
 
         boolean escalated = primaryIntent.tier() >= 3;
-        List<String> toolsCalled = routingService.getToolsCalled();
-        if (aiEnabled && aiResponseGenerator != null && !clarificationNeeded) {
-            toolsCalled.add("aiResponseGenerator");
-        }
 
         ChatResponse response = new ChatResponse(
                 sessionId,

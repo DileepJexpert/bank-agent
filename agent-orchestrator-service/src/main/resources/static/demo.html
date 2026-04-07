@@ -324,6 +324,50 @@
             white-space: pre-wrap;
             word-break: break-all;
         }
+        /* Pipeline visualization */
+        .pipeline {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-wrap: wrap;
+            margin-top: 6px;
+        }
+        .pipe-step {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            background: #162032;
+            color: #64748b;
+            border: 1px solid #334155;
+            transition: all 0.3s;
+        }
+        .pipe-step.active {
+            background: #1565c0;
+            color: #fff;
+            border-color: #1565c0;
+            box-shadow: 0 0 8px rgba(21,101,192,0.4);
+        }
+        .pipe-step.done {
+            background: #1b5e20;
+            color: #a5d6a7;
+            border-color: #1b5e20;
+        }
+        .pipe-arrow { color: #334155; font-size: 12px; }
+
+        /* TTS button */
+        .tts-btn {
+            width: 36px; height: 36px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s;
+        }
+        .tts-btn:hover { border-color: #1565c0; }
+        .tts-btn.on { background: #1565c0; border-color: #1565c0; }
     </style>
 </head>
 <body>
@@ -408,6 +452,31 @@
                 <div class="value" id="insightAgent" style="color:#64b5f6">-</div>
             </div>
 
+            <div class="insight-card">
+                <div class="label">AI Pipeline Steps</div>
+                <div class="pipeline" id="pipeline">
+                    <div class="pipe-step" id="pipe-stt">STT</div>
+                    <div class="pipe-arrow">&rarr;</div>
+                    <div class="pipe-step" id="pipe-intent">Intent</div>
+                    <div class="pipe-arrow">&rarr;</div>
+                    <div class="pipe-step" id="pipe-tools">Tools</div>
+                    <div class="pipe-arrow">&rarr;</div>
+                    <div class="pipe-step" id="pipe-response">Response</div>
+                    <div class="pipe-arrow">&rarr;</div>
+                    <div class="pipe-step" id="pipe-tts">TTS</div>
+                </div>
+            </div>
+
+            <div class="insight-card">
+                <div class="label">Voice Output (TTS)</div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+                    <button class="tts-btn" id="ttsToggle" onclick="toggleTTS()">
+                        <span id="ttsIcon">&#128264;</span>
+                    </button>
+                    <span id="ttsStatus" style="font-size:12px;color:#64748b">TTS Off</span>
+                </div>
+            </div>
+
             <div class="json-toggle" onclick="toggleJson()">
                 <span id="jsonArrow">&#9654;</span> View Raw JSON Response
             </div>
@@ -419,6 +488,7 @@
         const API_BASE = window.location.origin + '/api/v1/orchestrator';
         let sessionId = null;
         let recognition = null;
+        let ttsEnabled = false;
 
         const LANG_MAP = {
             'en': 'English', 'hi': 'Hindi', 'hi-en': 'Hinglish',
@@ -435,6 +505,11 @@
             addMessage(msg, 'user');
             showTyping(true);
             document.getElementById('sendBtn').disabled = true;
+
+            // Animate pipeline: STT step (if voice was used)
+            resetPipeline();
+            animatePipeStep('pipe-stt', 'done');
+            animatePipeStep('pipe-intent', 'active');
 
             try {
                 const body = {
@@ -454,12 +529,31 @@
                 const data = await res.json();
                 sessionId = data.sessionId;
 
+                // Animate pipeline steps with delays for visual effect
+                animatePipeStep('pipe-intent', 'done');
+                setTimeout(() => animatePipeStep('pipe-tools', 'active'), 100);
+                setTimeout(() => {
+                    animatePipeStep('pipe-tools', 'done');
+                    animatePipeStep('pipe-response', 'active');
+                }, 300);
+                setTimeout(() => {
+                    animatePipeStep('pipe-response', 'done');
+                    animatePipeStep('pipe-tts', ttsEnabled ? 'active' : 'done');
+                }, 500);
+
                 showTyping(false);
                 addBotMessage(data);
                 updateInsights(data);
 
+                // TTS: speak the response
+                if (ttsEnabled && data.message) {
+                    speakResponse(data.message, data.detectedLanguage || 'en');
+                    setTimeout(() => animatePipeStep('pipe-tts', 'done'), 1000);
+                }
+
             } catch (err) {
                 showTyping(false);
+                resetPipeline();
                 addMessage('Sorry, could not connect to the server. Make sure the orchestrator is running on port 8084.', 'bot');
                 console.error(err);
             }
@@ -601,6 +695,83 @@
             };
 
             recognition.start();
+        }
+
+        // ============ TTS (Text-to-Speech) ============
+        function toggleTTS() {
+            ttsEnabled = !ttsEnabled;
+            const btn = document.getElementById('ttsToggle');
+            const icon = document.getElementById('ttsIcon');
+            const status = document.getElementById('ttsStatus');
+            if (ttsEnabled) {
+                btn.classList.add('on');
+                icon.innerHTML = '&#128266;';
+                status.textContent = 'TTS On — responses will be spoken';
+                status.style.color = '#00c853';
+            } else {
+                btn.classList.remove('on');
+                icon.innerHTML = '&#128264;';
+                status.textContent = 'TTS Off';
+                status.style.color = '#64748b';
+                window.speechSynthesis.cancel();
+            }
+        }
+
+        function speakResponse(text, langCode) {
+            if (!('speechSynthesis' in window)) {
+                console.warn('TTS not supported in this browser');
+                return;
+            }
+            window.speechSynthesis.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            // Map language codes to BCP-47 speech synthesis language tags
+            const speechLangMap = {
+                'hi': 'hi-IN', 'hi-en': 'hi-IN', 'en': 'en-IN',
+                'ta': 'ta-IN', 'te': 'te-IN', 'bn': 'bn-IN',
+                'mr': 'mr-IN', 'gu': 'gu-IN'
+            };
+            utterance.lang = speechLangMap[langCode] || 'en-IN';
+            utterance.rate = 0.9;
+            utterance.pitch = 1.0;
+
+            // Try to find an Indian English or Hindi voice
+            const voices = window.speechSynthesis.getVoices();
+            const preferred = voices.find(v => v.lang === utterance.lang) ||
+                              voices.find(v => v.lang.startsWith(langCode)) ||
+                              voices.find(v => v.lang === 'en-IN');
+            if (preferred) utterance.voice = preferred;
+
+            utterance.onstart = () => {
+                document.getElementById('ttsStatus').textContent = 'Speaking...';
+                animatePipeStep('pipe-tts', 'active');
+            };
+            utterance.onend = () => {
+                document.getElementById('ttsStatus').textContent = 'TTS On — responses will be spoken';
+                animatePipeStep('pipe-tts', 'done');
+            };
+
+            window.speechSynthesis.speak(utterance);
+        }
+
+        // ============ Pipeline Animation ============
+        function resetPipeline() {
+            ['pipe-stt', 'pipe-intent', 'pipe-tools', 'pipe-response', 'pipe-tts'].forEach(id => {
+                const el = document.getElementById(id);
+                el.classList.remove('active', 'done');
+            });
+        }
+
+        function animatePipeStep(stepId, state) {
+            const el = document.getElementById(stepId);
+            el.classList.remove('active', 'done');
+            el.classList.add(state);
+        }
+
+        // Preload voices for TTS
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.getVoices();
+            window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
         }
     </script>
 </body>
