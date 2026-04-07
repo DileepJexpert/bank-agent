@@ -22,6 +22,12 @@ spring:
   application:
     name: agent-orchestrator-service
 
+  # Exclude Anthropic and OpenAI auto-config so only Ollama ChatModel is created
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.autoconfigure.anthropic.AnthropicAutoConfiguration
+      - org.springframework.ai.autoconfigure.openai.OpenAiAutoConfiguration
+
   # Docker Redis on localhost
   data:
     redis:
@@ -35,12 +41,8 @@ spring:
       group-id: orchestrator-local
       auto-offset-reset: earliest
 
-  # Spring AI - Ollama (local LLM)
+  # Spring AI - Ollama only
   ai:
-    anthropic:
-      enabled: false
-    openai:
-      enabled: false
     ollama:
       base-url: http://localhost:11434
       chat:
