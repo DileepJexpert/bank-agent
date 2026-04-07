@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
@@ -18,8 +19,8 @@ import org.springframework.context.annotation.Configuration;
  * Supported providers: {@code anthropic}, {@code openai}, {@code ollama},
  * {@code azure-openai}, {@code mistral}.
  * <p>
- * Ollama, Azure OpenAI, and Mistral all use the OpenAI-compatible starter under
- * the hood (Spring AI routes via base-url), so they share the {@link OpenAiChatModel} bean.
+ * Ollama uses its dedicated {@link OllamaChatModel} when selected.
+ * Azure OpenAI and Mistral use the OpenAI-compatible starter under the hood.
  * <p>
  * To switch providers, change the YAML property and supply the matching API key / base-url.
  */
@@ -38,6 +39,7 @@ public class LlmConfig {
     public ChatClient chatClient(
             ObjectProvider<AnthropicChatModel> anthropicProvider,
             ObjectProvider<OpenAiChatModel> openAiProvider,
+            ObjectProvider<OllamaChatModel> ollamaProvider,
             ChatClient.Builder builder) {
 
         String provider = llmProviderConfig.getProvider().toLowerCase();
@@ -54,7 +56,17 @@ public class LlmConfig {
                 }
                 yield model;
             }
-            case "openai", "ollama", "azure-openai", "mistral" -> {
+            case "ollama" -> {
+                OllamaChatModel model = ollamaProvider.getIfAvailable();
+                if (model == null) {
+                    throw new IllegalStateException(
+                            "Ollama ChatModel not available. Ensure spring-ai-ollama-spring-boot-starter "
+                                    + "is on the classpath and spring.ai.ollama.base-url is set.");
+                }
+                log.info("Using Ollama ChatModel with base-url from spring.ai.ollama config");
+                yield model;
+            }
+            case "openai", "azure-openai", "mistral" -> {
                 OpenAiChatModel model = openAiProvider.getIfAvailable();
                 if (model == null) {
                     throw new IllegalStateException(

@@ -27,10 +27,17 @@ spring:
           temperature: 0.7
       # For Azure OpenAI, override base-url:
       # base-url: https://<your-resource>.openai.azure.com
-      # For Ollama, override base-url:
-      # base-url: http://localhost:11434/v1
       # For Mistral, override base-url:
       # base-url: https://api.mistral.ai/v1
+
+    # Ollama (enable by setting agent.llm.provider=ollama and ai.enabled=true)
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        model: ${OLLAMA_MODEL:llama3.1}
+        options:
+          temperature: 0.1
+          num-predict: 500
 
   # --- Redis ---
   data:
@@ -53,6 +60,12 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+# --- AI Intent Detection & Response Generation ---
+# Set to true to enable LLM-based intent detection (via Ollama/Llama 3.1)
+# Set to false to fallback to keyword matching only
+ai:
+  enabled: ${AI_ENABLED:true}
 
 # --- Agent Platform Configuration ---
 agent:
