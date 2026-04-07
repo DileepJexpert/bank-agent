@@ -1,0 +1,27 @@
+# Local debug profile - points to Docker Desktop services
+# Usage: mvn spring-boot:run -pl vault-identity-service -Dspring-boot.run.profiles=local
+# IntelliJ: Active profiles = local
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/vault_identity
+    username: platform
+    password: platform_dev_password
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+jwt:
+  secret: dev-jwt-secret-not-for-production-use-replace-me
+  expiration: 86400000
+
+logging:
+  level:
+    com.idfcfirstbank.agent.vault: DEBUG

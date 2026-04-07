@@ -1,5 +1,5 @@
 # =============================================================================
-# LOCAL DEBUG PROFILE - No Docker, No Redis, No Kafka needed
+# LOCAL DEBUG PROFILE - Points to Docker Desktop services + Ollama
 # =============================================================================
 # Usage:
 #   mvn spring-boot:run -pl agent-orchestrator-service -Dspring-boot.run.profiles=local
@@ -7,12 +7,13 @@
 # Or in IntelliJ IDEA:
 #   Run Configuration > Active profiles: local
 #
-# This profile:
-#   - Uses in-memory session storage (no Redis required)
-#   - Disables Kafka auto-config (no Kafka required)
-#   - Disables Vault health checks
-#   - Uses Ollama (Llama 3.1) for AI if running, falls back to keyword matching
-#   - All MCP calls return mock data for demo purposes
+# Prerequisites (Docker Desktop):
+#   cd deployment/docker
+#   docker compose up -d postgres redis zookeeper kafka opa
+#
+# Prerequisites (Ollama):
+#   ollama serve
+#   ollama pull llama3.1
 
 server:
   port: 8084
@@ -21,12 +22,18 @@ spring:
   application:
     name: agent-orchestrator-service
 
-  # Disable Redis auto-config
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration
-      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+  # Docker Redis on localhost
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  # Docker Kafka on localhost (external port 29092)
+  kafka:
+    bootstrap-servers: localhost:29092
+    consumer:
+      group-id: orchestrator-local
+      auto-offset-reset: earliest
 
   # Spring AI - Ollama (local LLM)
   ai:
@@ -35,23 +42,23 @@ spring:
     openai:
       enabled: false
     ollama:
-      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      base-url: http://localhost:11434
       chat:
-        model: ${OLLAMA_MODEL:llama3.1}
+        model: llama3.1
         options:
           temperature: 0.1
           num-predict: 500
 
 # AI enabled by default in local profile
 ai:
-  enabled: ${AI_ENABLED:true}
+  enabled: true
 
 # Agent config
 agent:
   llm:
-    provider: ${LLM_PROVIDER:ollama}
-    model-name: ${LLM_MODEL:llama3.1}
-    api-key: ${LLM_API_KEY:not-needed-for-ollama}
+    provider: ollama
+    model-name: llama3.1
+    api-key: not-needed-for-ollama
     temperature: 0.1
     max-tokens: 500
     timeout: 60s
@@ -68,7 +75,7 @@ agent:
     core-banking-url: http://localhost:8086
     credit-bureau-url: http://localhost:8091
 
-# Actuator - simplified for local
+# Actuator
 management:
   endpoints:
     web:
@@ -77,11 +84,6 @@ management:
   endpoint:
     health:
       show-details: always
-  health:
-    redis:
-      enabled: false
-    kafka:
-      enabled: false
 
 # API Docs
 springdoc:

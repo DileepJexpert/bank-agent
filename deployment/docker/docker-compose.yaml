@@ -1,5 +1,3 @@
-version: "3.9"
-
 # =============================================================================
 # AI Agent Platform - Local Development Docker Compose
 # =============================================================================
@@ -29,7 +27,7 @@ services:
     environment:
       POSTGRES_USER: platform
       POSTGRES_PASSWORD: platform_dev_password
-      POSTGRES_MULTIPLE_DATABASES: vault_identity,vault_policy,vault_audit,account_agent,core_banking
+      POSTGRES_MULTIPLE_DATABASES: vault_identity,vault_policy,vault_audit,vault_anomaly,account_agent,core_banking,fraud_service,collections_agent,internal_ops
     ports:
       - "5432:5432"
     volumes:
