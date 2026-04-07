@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 
 import java.time.Duration;
+import java.util.Set;
 
 @Configuration
 public class GatewayConfig {
@@ -28,8 +29,8 @@ public class GatewayConfig {
                                 .circuitBreaker(cb -> cb
                                         .setName("orchestratorCircuitBreaker")
                                         .setFallbackUri(CIRCUIT_BREAKER_FALLBACK)
-                                        .setStatusCodes(HttpStatus.INTERNAL_SERVER_ERROR.name(),
-                                                HttpStatus.SERVICE_UNAVAILABLE.name()))
+                                        .setStatusCodes(Set.of(HttpStatus.INTERNAL_SERVER_ERROR.name(),
+                                                        HttpStatus.SERVICE_UNAVAILABLE.name())))
                                 .requestRateLimiter(rl -> rl
                                         .setRateLimiter(redisRateLimiter)
                                         .setDenyEmptyKey(false))
@@ -45,8 +46,8 @@ public class GatewayConfig {
                                 .circuitBreaker(cb -> cb
                                         .setName("accountCircuitBreaker")
                                         .setFallbackUri(CIRCUIT_BREAKER_FALLBACK)
-                                        .setStatusCodes(HttpStatus.INTERNAL_SERVER_ERROR.name(),
-                                                HttpStatus.SERVICE_UNAVAILABLE.name()))
+                                        .setStatusCodes(Set.of(HttpStatus.INTERNAL_SERVER_ERROR.name(),
+                                                        HttpStatus.SERVICE_UNAVAILABLE.name())))
                                 .requestRateLimiter(rl -> rl
                                         .setRateLimiter(redisRateLimiter)
                                         .setDenyEmptyKey(false))
@@ -62,8 +63,8 @@ public class GatewayConfig {
                                 .circuitBreaker(cb -> cb
                                         .setName("vaultIdentityCircuitBreaker")
                                         .setFallbackUri(CIRCUIT_BREAKER_FALLBACK)
-                                        .setStatusCodes(HttpStatus.INTERNAL_SERVER_ERROR.name(),
-                                                HttpStatus.SERVICE_UNAVAILABLE.name()))
+                                        .setStatusCodes(Set.of(HttpStatus.INTERNAL_SERVER_ERROR.name(),
+                                                        HttpStatus.SERVICE_UNAVAILABLE.name())))
                                 .requestRateLimiter(rl -> rl
                                         .setRateLimiter(redisRateLimiter)
                                         .setDenyEmptyKey(false))
@@ -79,8 +80,8 @@ public class GatewayConfig {
                                 .circuitBreaker(cb -> cb
                                         .setName("vaultPolicyCircuitBreaker")
                                         .setFallbackUri(CIRCUIT_BREAKER_FALLBACK)
-                                        .setStatusCodes(HttpStatus.INTERNAL_SERVER_ERROR.name(),
-                                                HttpStatus.SERVICE_UNAVAILABLE.name()))
+                                        .setStatusCodes(Set.of(HttpStatus.INTERNAL_SERVER_ERROR.name(),
+                                                        HttpStatus.SERVICE_UNAVAILABLE.name())))
                                 .requestRateLimiter(rl -> rl
                                         .setRateLimiter(redisRateLimiter)
                                         .setDenyEmptyKey(false))
@@ -96,8 +97,8 @@ public class GatewayConfig {
                                 .circuitBreaker(cb -> cb
                                         .setName("vaultAuditCircuitBreaker")
                                         .setFallbackUri(CIRCUIT_BREAKER_FALLBACK)
-                                        .setStatusCodes(HttpStatus.INTERNAL_SERVER_ERROR.name(),
-                                                HttpStatus.SERVICE_UNAVAILABLE.name()))
+                                        .setStatusCodes(Set.of(HttpStatus.INTERNAL_SERVER_ERROR.name(),
+                                                        HttpStatus.SERVICE_UNAVAILABLE.name())))
                                 .requestRateLimiter(rl -> rl
                                         .setRateLimiter(redisRateLimiter)
                                         .setDenyEmptyKey(false))
@@ -114,8 +115,8 @@ public class GatewayConfig {
                                 .circuitBreaker(cb -> cb
                                         .setName("mcpCoreBankingCircuitBreaker")
                                         .setFallbackUri(CIRCUIT_BREAKER_FALLBACK)
-                                        .setStatusCodes(HttpStatus.INTERNAL_SERVER_ERROR.name(),
-                                                HttpStatus.SERVICE_UNAVAILABLE.name()))
+                                        .setStatusCodes(Set.of(HttpStatus.INTERNAL_SERVER_ERROR.name(),
+                                                        HttpStatus.SERVICE_UNAVAILABLE.name())))
                                 .requestRateLimiter(rl -> rl
                                         .setRateLimiter(redisRateLimiter)
                                         .setDenyEmptyKey(false))
