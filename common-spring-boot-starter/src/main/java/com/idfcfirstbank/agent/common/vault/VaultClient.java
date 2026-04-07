@@ -26,8 +26,8 @@ public class VaultClient {
             @Value("${agent.vault.base-url:http://vault-policy-service:8080}") String vaultBaseUrl) {
         this.vaultBaseUrl = vaultBaseUrl;
         this.restTemplate = restTemplateBuilder
-                .connectTimeout(Duration.ofSeconds(5))
-                .readTimeout(Duration.ofSeconds(10))
+                .setConnectTimeout(Duration.ofSeconds(5))
+                .setReadTimeout(Duration.ofSeconds(10))
                 .build();
     }
 

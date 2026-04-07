@@ -2,6 +2,7 @@ package com.idfcfirstbank.agent.common.health;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.DescribeClusterResult;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
@@ -28,8 +29,8 @@ public class KafkaHealthIndicator implements HealthIndicator {
 
     @Override
     public Health health() {
-        try {
-            DescribeClusterResult clusterResult = kafkaAdmin.describeCluster();
+        try (AdminClient adminClient = AdminClient.create(kafkaAdmin.getConfigurationProperties())) {
+            DescribeClusterResult clusterResult = adminClient.describeCluster();
             int brokerCount = clusterResult.nodes().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size();
             String clusterId = clusterResult.clusterId().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
