@@ -1,4 +1,4 @@
-package com.idfcfirstbank.agent.collections;
+package com.idfcfirstbank.agent.collections.scheduler;
 
 import com.idfcfirstbank.agent.collections.entity.CollectionsQueue;
 import com.idfcfirstbank.agent.collections.repository.CollectionsInteractionRepository;
@@ -158,11 +158,11 @@ class CollectionsBatchSchedulerTest {
                 .thenReturn(allowDecision());
 
         // CUST-001: no prior contacts
-        when(valueOperations.get(argThat(key -> key != null && key.contains("CUST-001")))).thenReturn("0");
-        when(valueOperations.increment(argThat(key -> key != null && key.contains("CUST-001")))).thenReturn(1L);
+        when(valueOperations.get(argThat(key -> key != null && ((String) key).contains("CUST-001")))).thenReturn("0");
+        when(valueOperations.increment(argThat(key -> key != null && ((String) key).contains("CUST-001")))).thenReturn(1L);
 
         // CUST-002: already at limit
-        when(valueOperations.get(argThat(key -> key != null && key.contains("CUST-002")))).thenReturn("3");
+        when(valueOperations.get(argThat(key -> key != null && ((String) key).contains("CUST-002")))).thenReturn("3");
 
         scheduler.runDailyCollectionsBatch();
 
@@ -237,7 +237,7 @@ class CollectionsBatchSchedulerTest {
         when(vaultClient.evaluatePolicy(anyString(), eq("collections_call"),
                 eq("customer:CUST-002"), anyMap()))
                 .thenReturn(allowDecision());
-        when(valueOperations.get(argThat(key -> key != null && key.contains("CUST-002")))).thenReturn(null);
+        when(valueOperations.get(argThat(key -> key != null && ((String) key).contains("CUST-002")))).thenReturn(null);
         when(valueOperations.increment(anyString())).thenReturn(1L);
 
         scheduler.runDailyCollectionsBatch();
