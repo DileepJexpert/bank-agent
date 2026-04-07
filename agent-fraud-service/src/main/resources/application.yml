@@ -1,0 +1,90 @@
+server:
+  port: 8096
+
+spring:
+  application:
+    name: agent-fraud-service
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/fraud_service
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 5000ms
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: fraud-detection-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        spring.json.trusted.packages: "com.idfcfirstbank.agent.fraud.model"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+
+# MCP Service URLs
+mcp:
+  notification:
+    url: ${MCP_NOTIFICATION_URL:http://localhost:8100}
+  payment-gateway:
+    url: ${MCP_PAYMENT_GATEWAY_URL:http://localhost:8101}
+  core-banking:
+    url: ${MCP_CORE_BANKING_URL:http://localhost:8102}
+
+# Vault Configuration
+vault:
+  url: ${VAULT_URL:http://localhost:8200}
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
+logging:
+  level:
+    com.idfcfirstbank.agent.fraud: INFO
+    org.apache.kafka: WARN
+    org.springframework.kafka: INFO
