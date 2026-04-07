@@ -40,11 +40,11 @@ public class RoutingService {
     @Value("${agent.routing.loans-service-url:http://agent-loans-service:8090}")
     private String loansServiceUrl;
 
-    /** Intents handled by the Account Agent. */
+    /** Intents handled by the Account Agent (includes AI detector aliases). */
     private static final Set<String> ACCOUNT_INTENTS = Set.of(
-            "BALANCE_INQUIRY", "MINI_STATEMENT", "FUND_TRANSFER",
-            "CHEQUE_STATUS", "CHEQUE_BOOK_REQUEST", "FD_CREATION",
-            "ACCOUNT_DETAILS", "INTEREST_CERTIFICATE"
+            "BALANCE_INQUIRY", "BALANCE_CHECK", "MINI_STATEMENT", "FUND_TRANSFER",
+            "TRANSFER_MONEY", "CHEQUE_STATUS", "CHEQUE_BOOK_REQUEST", "FD_CREATION",
+            "CREATE_FD", "ACCOUNT_DETAILS", "INTEREST_CERTIFICATE"
     );
 
     /** Intents handled by the Card Agent. */
@@ -59,6 +59,16 @@ public class RoutingService {
             "LOAN_ELIGIBILITY", "LOAN_EMI_QUERY", "LOAN_PREPAYMENT"
     );
 
+    /** Tracks tools called during the last routing operation (per-thread). */
+    private final ThreadLocal<List<String>> toolsCalledTracker = ThreadLocal.withInitial(ArrayList::new);
+
+    /**
+     * Get the list of tools/agents called during the most recent routing operation.
+     */
+    public List<String> getToolsCalled() {
+        return new ArrayList<>(toolsCalledTracker.get());
+    }
+
     /**
      * Route multiple detected intents sequentially and aggregate responses.
      *
@@ -68,6 +78,9 @@ public class RoutingService {
      * @return aggregated agent response text
      */
     public String routeToAgents(List<DetectedIntent> intents, String sessionId, ChatRequest request) {
+        // Reset tools tracking for this request
+        toolsCalledTracker.get().clear();
+
         if (intents == null || intents.isEmpty()) {
             return "I'm not sure I understand your request. Could you please rephrase or provide more details?";
         }
@@ -114,17 +127,23 @@ public class RoutingService {
 
         try {
             if (ACCOUNT_INTENTS.contains(intentName)) {
+                toolsCalledTracker.get().add("accountAgent:" + intentName);
                 return callAccountAgent(intent, sessionId, request);
             } else if (CARD_INTENTS.contains(intentName)) {
+                toolsCalledTracker.get().add("cardAgent:" + intentName);
                 return callAgentService(cardServiceUrl + "/api/v1/cards/chat", intent, sessionId, request);
             } else if (LOAN_INTENTS.contains(intentName)) {
+                toolsCalledTracker.get().add("loansAgent:" + intentName);
                 return callAgentService(loansServiceUrl + "/api/v1/loans/chat", intent, sessionId, request);
             } else if ("GENERAL_INQUIRY".equals(intentName)) {
+                toolsCalledTracker.get().add("orchestrator:GENERAL_INQUIRY");
                 return handleGeneralInquiry(request.message());
             } else if ("COMPLAINT".equals(intentName)) {
+                toolsCalledTracker.get().add("orchestrator:COMPLAINT");
                 return "I understand you have a concern. Let me connect you with our customer support team "
                         + "who can assist you further. Your complaint reference will be shared shortly.";
             } else {
+                toolsCalledTracker.get().add("orchestrator:UNKNOWN");
                 return "I'm not sure I understand your request. Could you please rephrase or provide more details?";
             }
         } catch (Exception e) {

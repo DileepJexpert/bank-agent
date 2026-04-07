@@ -155,6 +155,11 @@ public class ChatController {
         sessionService.addMessage(sessionId, "assistant", agentResponse);
 
         boolean escalated = primaryIntent.tier() >= 3;
+        List<String> toolsCalled = routingService.getToolsCalled();
+        if (aiEnabled && aiResponseGenerator != null && !clarificationNeeded) {
+            toolsCalled.add("aiResponseGenerator");
+        }
+
         ChatResponse response = new ChatResponse(
                 sessionId,
                 agentResponse,
@@ -167,7 +172,8 @@ public class ChatController {
                 primaryIntent.tier(),
                 usedModel,
                 intentConfidence,
-                detectedLanguage
+                detectedLanguage,
+                toolsCalled
         );
 
         return ResponseEntity.ok(response);

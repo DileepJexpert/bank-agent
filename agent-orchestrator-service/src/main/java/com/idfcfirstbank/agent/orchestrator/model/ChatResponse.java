@@ -17,6 +17,7 @@ import java.util.List;
  * @param aiModel             the AI model used for detection (e.g. "llama3.1" or "keyword-fallback")
  * @param intentConfidence    confidence from the AI intent detector (0.0 - 1.0)
  * @param detectedLanguage    language detected from the customer message (e.g. "hi", "en", "hi-en")
+ * @param toolsCalled         list of AI tools/agents invoked during processing
  */
 public record ChatResponse(
         String sessionId,
@@ -30,7 +31,8 @@ public record ChatResponse(
         int tier,
         String aiModel,
         double intentConfidence,
-        String detectedLanguage
+        String detectedLanguage,
+        List<String> toolsCalled
 ) {
     /**
      * Backward-compatible constructor for single-intent responses (no AI fields).
@@ -38,7 +40,7 @@ public record ChatResponse(
     public ChatResponse(String sessionId, String message, String agentType,
                         String intent, double confidence, boolean escalated) {
         this(sessionId, message, agentType, intent, confidence, escalated,
-                List.of(), false, 0, "keyword-fallback", confidence, "en");
+                List.of(), false, 0, "keyword-fallback", confidence, "en", List.of());
     }
 
     /**
@@ -48,6 +50,6 @@ public record ChatResponse(
                         String intent, double confidence, boolean escalated,
                         List<DetectedIntent> intents, boolean clarificationNeeded, int tier) {
         this(sessionId, message, agentType, intent, confidence, escalated,
-                intents, clarificationNeeded, tier, "keyword-fallback", confidence, "en");
+                intents, clarificationNeeded, tier, "keyword-fallback", confidence, "en", List.of());
     }
 }
