@@ -12,13 +12,14 @@
 3. [Infrastructure Setup (Docker)](#3-infrastructure-setup-docker)
 4. [Build the Java Backend](#4-build-the-java-backend)
 5. [Configure LLM Provider](#5-configure-llm-provider)
-6. [Run Services Individually](#6-run-services-individually)
-7. [Run All Services via Docker Compose](#7-run-all-services-via-docker-compose)
-8. [Flutter Admin Dashboard](#8-flutter-admin-dashboard)
-9. [Verify Everything is Running](#9-verify-everything-is-running)
-10. [Common Issues & Troubleshooting](#10-common-issues--troubleshooting)
-11. [Port Reference](#11-port-reference)
-12. [Environment Variables Reference](#12-environment-variables-reference)
+6. [Local Debug Mode (Recommended for Development)](#6-local-debug-mode-recommended-for-development)
+7. [Run Services Individually (Default Profile)](#7-run-services-individually-default-profile)
+8. [Run All Services via Docker Compose](#8-run-all-services-via-docker-compose)
+9. [Flutter Admin Dashboard](#9-flutter-admin-dashboard)
+10. [Verify Everything is Running](#10-verify-everything-is-running)
+11. [Common Issues & Troubleshooting](#11-common-issues--troubleshooting)
+12. [Port Reference](#12-port-reference)
+13. [Environment Variables Reference](#13-environment-variables-reference)
 
 ---
 
@@ -206,9 +207,237 @@ ollama pull llama3.1
 
 ---
 
-## 6. Run Services Individually
+## 6. Local Debug Mode (Recommended for Development)
 
-Best for development — run infrastructure in Docker, services in your IDE or terminal.
+Each service includes an `application-local.yml` profile pre-configured to connect to Docker Desktop infrastructure and **Ollama** for AI — no cloud API keys needed, no `.env` file required.
+
+### Prerequisites
+
+1. **Docker Desktop** running with infrastructure containers (see [Section 3](#3-infrastructure-setup-docker))
+2. **Ollama** installed and running locally with `llama3.1` model pulled
+
+#### Install & Start Ollama
+
+```bash
+# macOS
+brew install ollama
+ollama serve &
+ollama pull llama3.1
+
+# Windows — download from https://ollama.com/download/windows
+# Then in a terminal:
+ollama serve
+ollama pull llama3.1
+
+# Linux
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama serve &
+ollama pull llama3.1
+```
+
+Verify Ollama is running:
+```bash
+curl http://localhost:11434/api/tags
+# Should list llama3.1 in the models
+```
+
+### Step 1: Start Infrastructure (Docker)
+
+You only need the core infrastructure — no need to run all containers:
+
+```bash
+cd deployment/docker
+docker compose up -d postgres redis zookeeper kafka opa
+cd ../..
+```
+
+Wait ~30 seconds, then verify:
+```bash
+docker compose -f deployment/docker/docker-compose.yaml ps
+```
+
+All 5 services should show `running` or `healthy`.
+
+### Step 2: Build the Project
+
+```bash
+mvn clean install -DskipTests
+```
+
+### Step 3: Run Any Service with Local Profile
+
+The `local` profile auto-configures each service to use:
+- **PostgreSQL** at `localhost:5432` (with correct database per service)
+- **Redis** at `localhost:6379`
+- **Kafka** at `localhost:29092`
+- **Ollama** at `localhost:11434` (as the LLM provider)
+- **OPA** at `localhost:8181`
+
+Run any service from the project root with:
+
+```bash
+mvn spring-boot:run -pl <module-name> -Dspring-boot.run.profiles=local
+```
+
+**No `.env` file, no environment variables, no extra arguments needed.**
+
+### Service Quick-Start Commands
+
+| Service | Module Name | Command | Port |
+|---------|-------------|---------|------|
+| Config Server | `config-server` | `mvn spring-boot:run -pl config-server -Dspring-boot.run.profiles=local` | 8888 |
+| API Gateway | `api-gateway` | `mvn spring-boot:run -pl api-gateway -Dspring-boot.run.profiles=local` | 8080 |
+| **Orchestrator** | `agent-orchestrator-service` | `mvn spring-boot:run -pl agent-orchestrator-service -Dspring-boot.run.profiles=local` | 8084 |
+| Account Agent | `agent-account-service` | `mvn spring-boot:run -pl agent-account-service -Dspring-boot.run.profiles=local` | 8085 |
+| Card Agent | `agent-card-service` | `mvn spring-boot:run -pl agent-card-service -Dspring-boot.run.profiles=local` | 8088 |
+| Loans Agent | `agent-loans-service` | `mvn spring-boot:run -pl agent-loans-service -Dspring-boot.run.profiles=local` | 8090 |
+| Wealth Agent | `agent-wealth-service` | `mvn spring-boot:run -pl agent-wealth-service -Dspring-boot.run.profiles=local` | 8094 |
+| Collections Agent | `agent-collections-service` | `mvn spring-boot:run -pl agent-collections-service -Dspring-boot.run.profiles=local` | 8095 |
+| Fraud Agent | `agent-fraud-service` | `mvn spring-boot:run -pl agent-fraud-service -Dspring-boot.run.profiles=local` | 8096 |
+| Internal Ops Agent | `agent-internal-ops-service` | `mvn spring-boot:run -pl agent-internal-ops-service -Dspring-boot.run.profiles=local` | 8097 |
+| MCP Core Banking | `mcp-core-banking-server` | `mvn spring-boot:run -pl mcp-core-banking-server -Dspring-boot.run.profiles=local` | 8086 |
+| MCP Card Management | `mcp-card-management-server` | `mvn spring-boot:run -pl mcp-card-management-server -Dspring-boot.run.profiles=local` | 8089 |
+| Vault Identity | `vault-identity-service` | `mvn spring-boot:run -pl vault-identity-service -Dspring-boot.run.profiles=local` | 8081 |
+| Vault Policy | `vault-policy-service` | `mvn spring-boot:run -pl vault-policy-service -Dspring-boot.run.profiles=local` | 8082 |
+| Vault Audit | `vault-audit-service` | `mvn spring-boot:run -pl vault-audit-service -Dspring-boot.run.profiles=local` | 8083 |
+| Vault Anomaly | `vault-anomaly-service` | `mvn spring-boot:run -pl vault-anomaly-service -Dspring-boot.run.profiles=local` | 8087 |
+
+### What to Start for Common Scenarios
+
+You don't need to start all 16 services. Here's what to run for each scenario:
+
+#### Scenario A: Test the AI Chat Demo (most common)
+
+```bash
+# Terminal 1: Orchestrator (the main AI service)
+mvn spring-boot:run -pl agent-orchestrator-service -Dspring-boot.run.profiles=local
+
+# Open browser: http://localhost:8084/demo.html
+```
+
+The orchestrator has mock fallbacks, so it works standalone for AI demo testing.
+
+#### Scenario B: Test Account / Balance Flows End-to-End
+
+```bash
+# Terminal 1: Vault Identity (authentication)
+mvn spring-boot:run -pl vault-identity-service -Dspring-boot.run.profiles=local
+
+# Terminal 2: Vault Policy (authorization)
+mvn spring-boot:run -pl vault-policy-service -Dspring-boot.run.profiles=local
+
+# Terminal 3: MCP Core Banking (banking tools)
+mvn spring-boot:run -pl mcp-core-banking-server -Dspring-boot.run.profiles=local
+
+# Terminal 4: Account Agent
+mvn spring-boot:run -pl agent-account-service -Dspring-boot.run.profiles=local
+
+# Terminal 5: Orchestrator
+mvn spring-boot:run -pl agent-orchestrator-service -Dspring-boot.run.profiles=local
+```
+
+#### Scenario C: Test Card Flows
+
+```bash
+# Terminal 1: vault-identity-service (local profile)
+# Terminal 2: vault-policy-service (local profile)
+# Terminal 3: mcp-card-management-server (local profile)
+# Terminal 4: agent-card-service (local profile)
+# Terminal 5: agent-orchestrator-service (local profile)
+```
+
+#### Scenario D: Full Stack Local
+
+Start in this order (each in its own terminal):
+1. `config-server`
+2. `vault-identity-service`, `vault-policy-service`, `vault-audit-service`, `vault-anomaly-service`
+3. `mcp-core-banking-server`, `mcp-card-management-server`
+4. `agent-account-service`, `agent-card-service`, `agent-loans-service`, `agent-wealth-service`
+5. `agent-orchestrator-service`
+6. `api-gateway`
+
+### IntelliJ IDEA Debug Configuration (Local Profile)
+
+1. Open `bank-agent/pom.xml` as a project
+2. Navigate to any `*Application.java` main class (e.g., `OrchestratorApplication.java`)
+3. Right-click → **Run** or **Debug**
+4. Edit the Run Configuration:
+   - **Active profiles**: `local`
+   - (No environment variables needed!)
+5. Click **Debug** to start with breakpoints
+
+**Detailed steps:**
+1. **Run → Edit Configurations → + → Spring Boot**
+2. **Main class**: select the `*Application` class for your service
+3. **Active profiles**: type `local`
+4. **Use classpath of module**: select the corresponding module (e.g., `agent-orchestrator-service`)
+5. Click **Apply** and **Debug**
+
+> **Tip**: You can create a compound run configuration in IntelliJ to start multiple services at once.
+
+### VS Code Debug Configuration (Local Profile)
+
+Add this to `.vscode/launch.json`:
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Orchestrator (Local)",
+      "request": "launch",
+      "mainClass": "com.idfcfirstbank.agent.orchestrator.OrchestratorApplication",
+      "projectName": "agent-orchestrator-service",
+      "vmArgs": "-Dspring.profiles.active=local"
+    },
+    {
+      "type": "java",
+      "name": "Account Agent (Local)",
+      "request": "launch",
+      "mainClass": "com.idfcfirstbank.agent.account.AccountAgentApplication",
+      "projectName": "agent-account-service",
+      "vmArgs": "-Dspring.profiles.active=local"
+    },
+    {
+      "type": "java",
+      "name": "Vault Identity (Local)",
+      "request": "launch",
+      "mainClass": "com.idfcfirstbank.agent.vault.identity.VaultIdentityApplication",
+      "projectName": "vault-identity-service",
+      "vmArgs": "-Dspring.profiles.active=local"
+    }
+  ]
+}
+```
+
+### How the Local Profile Works
+
+Each service has an `application-local.yml` file in `src/main/resources/` that overrides the default `application.yml`:
+
+- **Ollama as LLM**: Services use Ollama's OpenAI-compatible endpoint (`http://localhost:11434/v1`) with `llama3.1` model
+- **Spring AI auto-config exclusion**: The local profile excludes `AnthropicAutoConfiguration` to avoid bean conflicts (no Anthropic API key needed locally)
+- **Database per service**: Each service with a database points to its own PostgreSQL database on `localhost:5432`
+- **In-memory fallbacks**: SessionService gracefully falls back to in-memory storage if Redis is unavailable
+- **DEBUG logging**: All AI and agent packages log at DEBUG level for easy troubleshooting
+
+### Troubleshooting Local Debug Mode
+
+| Problem | Solution |
+|---------|----------|
+| `expected single matching bean but found 3: anthropicChatModel...` | Ensure you're using `-Dspring-boot.run.profiles=local` — the local profile excludes conflicting auto-configs |
+| `Connection refused` to Ollama | Run `ollama serve` and verify with `curl http://localhost:11434/api/tags` |
+| `Connection refused` to PostgreSQL/Redis/Kafka | Ensure Docker containers are running: `docker compose -f deployment/docker/docker-compose.yaml ps` |
+| Port already in use | Check what's using the port: `lsof -i :<port>` (macOS/Linux) or `netstat -ano \| findstr :<port>` (Windows) |
+| Database does not exist | The `init-databases.sh` script creates all databases. Restart postgres: `docker compose -f deployment/docker/docker-compose.yaml restart postgres` |
+| Ollama model not found | Pull the model: `ollama pull llama3.1` |
+| Slow first LLM response | First request to Ollama loads the model into memory (~10-30s). Subsequent requests are faster. |
+
+---
+
+## 7. Run Services Individually (Default Profile)
+
+Uses the default profile with `.env` file — for when you need cloud LLM providers. For local development with Ollama, see [Section 6](#6-local-debug-mode-recommended-for-development) instead.
 
 ### Load environment variables
 
@@ -317,7 +546,7 @@ mvn -pl api-gateway spring-boot:run
 
 ---
 
-## 7. Run All Services via Docker Compose
+## 8. Run All Services via Docker Compose
 
 For a full stack run without any IDE — everything in containers:
 
@@ -417,7 +646,7 @@ docker compose logs -f vault-identity
 
 ---
 
-## 8. Flutter Admin Dashboard
+## 9. Flutter Admin Dashboard
 
 ### Install Flutter dependencies
 
@@ -450,7 +679,7 @@ flutter build web --release
 
 ---
 
-## 9. Verify Everything is Running
+## 10. Verify Everything is Running
 
 ### Health check all services
 
@@ -531,7 +760,7 @@ curl -X POST http://localhost:8082/api/v1/policies/evaluate \
 
 ---
 
-## 10. Common Issues & Troubleshooting
+## 11. Common Issues & Troubleshooting
 
 ### Docker issues
 
@@ -587,7 +816,7 @@ curl -X POST http://localhost:8082/api/v1/policies/evaluate \
 
 ---
 
-## 11. Port Reference
+## 12. Port Reference
 
 | Port | Service | Purpose |
 |------|---------|---------|
@@ -614,7 +843,7 @@ curl -X POST http://localhost:8082/api/v1/policies/evaluate \
 
 ---
 
-## 12. Environment Variables Reference
+## 13. Environment Variables Reference
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -637,6 +866,30 @@ curl -X POST http://localhost:8082/api/v1/policies/evaluate \
 ---
 
 ## Quick Start (TL;DR)
+
+### Option A: Local Debug Mode with Ollama (No API Key Needed)
+
+```bash
+# 1. Clone and enter project
+git clone https://github.com/dileepjexpert/bank-agent.git && cd bank-agent
+
+# 2. Start infrastructure
+cd deployment/docker && docker compose up -d postgres redis zookeeper kafka opa && cd ../..
+
+# 3. Start Ollama with llama3.1
+ollama serve &
+ollama pull llama3.1
+
+# 4. Build
+mvn clean install -DskipTests
+
+# 5. Run orchestrator with local profile
+mvn spring-boot:run -pl agent-orchestrator-service -Dspring-boot.run.profiles=local
+
+# 6. Open browser: http://localhost:8084/demo.html
+```
+
+### Option B: With Cloud LLM Provider (API Key Required)
 
 ```bash
 # 1. Clone and enter project
