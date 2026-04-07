@@ -1,0 +1,22 @@
+# Local debug profile - points to Docker Desktop services
+# Usage: mvn spring-boot:run -pl mcp-card-management-server -Dspring-boot.run.profiles=local
+server:
+  port: 8089
+
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+agent:
+  vault:
+    base-url: http://localhost:8082
+
+# Card backend - mock for local
+card:
+  backend-url: http://localhost:9091
+
+logging:
+  level:
+    com.idfcfirstbank.agent.mcp: DEBUG

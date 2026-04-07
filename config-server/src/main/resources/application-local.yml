@@ -1,0 +1,17 @@
+# Local debug profile - uses native file system config
+# Usage: mvn spring-boot:run -pl config-server -Dspring-boot.run.profiles=local
+server:
+  port: 8888
+
+spring:
+  profiles:
+    active: native
+  cloud:
+    config:
+      server:
+        native:
+          search-locations: classpath:/config
+
+logging:
+  level:
+    org.springframework.cloud.config: DEBUG

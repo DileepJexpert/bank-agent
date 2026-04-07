@@ -1,0 +1,38 @@
+# Local debug profile - points to Docker Desktop services + Ollama
+# Usage: mvn spring-boot:run -pl agent-account-service -Dspring-boot.run.profiles=local
+server:
+  port: 8085
+
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  kafka:
+    bootstrap-servers: localhost:29092
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        model: llama3.1
+        options:
+          temperature: 0.1
+          num-predict: 500
+    anthropic:
+      enabled: false
+    openai:
+      enabled: false
+
+agent:
+  llm:
+    provider: ollama
+    model-name: llama3.1
+  vault:
+    base-url: http://localhost:8082
+  mcp:
+    core-banking-url: http://localhost:8086
+
+logging:
+  level:
+    com.idfcfirstbank.agent.account: DEBUG
+    org.springframework.ai: DEBUG

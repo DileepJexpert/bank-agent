@@ -1,0 +1,25 @@
+# Local debug profile - points to Docker Desktop services
+# Usage: mvn spring-boot:run -pl vault-anomaly-service -Dspring-boot.run.profiles=local
+server:
+  port: 8087
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/vault_anomaly
+    username: platform
+    password: platform_dev_password
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+  kafka:
+    bootstrap-servers: localhost:29092
+    streams:
+      application-id: vault-anomaly-local
+      properties:
+        default.key.serde: org.apache.kafka.common.serialization.Serdes$StringSerde
+        default.value.serde: org.apache.kafka.common.serialization.Serdes$StringSerde
+
+logging:
+  level:
+    com.idfcfirstbank.agent.vault: DEBUG

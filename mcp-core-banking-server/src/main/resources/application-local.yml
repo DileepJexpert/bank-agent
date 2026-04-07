@@ -1,0 +1,22 @@
+# Local debug profile - points to Docker Desktop services
+# Usage: mvn spring-boot:run -pl mcp-core-banking-server -Dspring-boot.run.profiles=local
+server:
+  port: 8086
+
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+agent:
+  vault:
+    base-url: http://localhost:8082
+
+# Finacle/Core Banking backend - mock for local
+core-banking:
+  backend-url: http://localhost:9090
+
+logging:
+  level:
+    com.idfcfirstbank.agent.mcp: DEBUG

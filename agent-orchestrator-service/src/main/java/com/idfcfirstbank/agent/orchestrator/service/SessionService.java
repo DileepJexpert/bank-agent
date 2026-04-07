@@ -3,31 +3,58 @@ package com.idfcfirstbank.agent.orchestrator.service;
 import com.idfcfirstbank.agent.orchestrator.model.SessionInfo;
 import com.idfcfirstbank.agent.orchestrator.model.SessionInfo.MessageEntry;
 import com.idfcfirstbank.agent.orchestrator.statemachine.ConversationState;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Redis-backed session management for customer conversations.
- * Stores conversation context, message history, and current state machine position.
+ * Session management for customer conversations.
+ * <p>
+ * Uses Redis when available (production/Docker). Falls back to in-memory
+ * storage when Redis is not configured (local debug mode).
+ * <p>
+ * For local debugging: run with {@code --spring.profiles.active=local}
+ * to skip Redis entirely.
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class SessionService {
 
     private static final String SESSION_KEY_PREFIX = "session:";
     private static final Duration SESSION_TTL = Duration.ofHours(2);
 
+    @Nullable
     private final RedisTemplate<String, Object> redisTemplate;
+
+    /** In-memory fallback when Redis is unavailable. */
+    private final Map<String, SessionInfo> inMemoryStore = new ConcurrentHashMap<>();
+    private final boolean useRedis;
+
+    public SessionService(@Nullable RedisTemplate<String, Object> redisTemplate) {
+        this.redisTemplate = redisTemplate;
+        this.useRedis = redisTemplate != null && isRedisAvailable(redisTemplate);
+        if (useRedis) {
+            log.info("SessionService using Redis for session storage");
+        } else {
+            log.info("SessionService using IN-MEMORY storage (no Redis). Sessions lost on restart.");
+        }
+    }
+
+    private boolean isRedisAvailable(RedisTemplate<String, Object> template) {
+        try {
+            template.getConnectionFactory().getConnection().ping();
+            return true;
+        } catch (Exception e) {
+            log.warn("Redis not available, falling back to in-memory sessions: {}", e.getMessage());
+            return false;
+        }
+    }
 
     /**
      * Create a new conversation session.
@@ -44,7 +71,8 @@ public class SessionService {
                 Instant.now()
         );
         save(session);
-        log.info("Created session: sessionId={}, customerId={}, channel={}", sessionId, customerId, channel);
+        log.info("Created session: sessionId={}, customerId={}, channel={}, storage={}",
+                sessionId, customerId, channel, useRedis ? "redis" : "in-memory");
         return session;
     }
 
@@ -52,19 +80,29 @@ public class SessionService {
      * Retrieve a session by its identifier.
      */
     public Optional<SessionInfo> getSession(String sessionId) {
-        Object value = redisTemplate.opsForValue().get(keyOf(sessionId));
-        if (value instanceof SessionInfo session) {
-            return Optional.of(session);
+        if (useRedis) {
+            try {
+                Object value = redisTemplate.opsForValue().get(keyOf(sessionId));
+                if (value instanceof SessionInfo session) {
+                    return Optional.of(session);
+                }
+            } catch (Exception e) {
+                log.warn("Redis read failed, trying in-memory: {}", e.getMessage());
+            }
         }
-        return Optional.empty();
+        return Optional.ofNullable(inMemoryStore.get(sessionId));
     }
 
     /**
      * Append a message to the conversation history and persist.
      */
     public SessionInfo addMessage(String sessionId, String role, String content) {
-        SessionInfo session = getSession(sessionId)
-                .orElseThrow(() -> new IllegalArgumentException("Session not found: " + sessionId));
+        SessionInfo session = getSession(sessionId).orElse(null);
+        if (session == null) {
+            // Auto-create session for convenience in local dev
+            session = createSession("auto-user", "web", "en");
+            sessionId = session.sessionId();
+        }
 
         List<MessageEntry> updatedHistory = new ArrayList<>(session.history());
         updatedHistory.add(new MessageEntry(role, content, Instant.now()));
@@ -106,7 +144,14 @@ public class SessionService {
      * End and remove a session.
      */
     public void endSession(String sessionId) {
-        redisTemplate.delete(keyOf(sessionId));
+        if (useRedis) {
+            try {
+                redisTemplate.delete(keyOf(sessionId));
+            } catch (Exception e) {
+                log.warn("Redis delete failed: {}", e.getMessage());
+            }
+        }
+        inMemoryStore.remove(sessionId);
         log.info("Ended session: sessionId={}", sessionId);
     }
 
@@ -120,7 +165,17 @@ public class SessionService {
     }
 
     private void save(SessionInfo session) {
-        redisTemplate.opsForValue().set(keyOf(session.sessionId()), session, SESSION_TTL);
+        // Always save to in-memory (fast lookup / fallback)
+        inMemoryStore.put(session.sessionId(), session);
+
+        // Also save to Redis if available
+        if (useRedis) {
+            try {
+                redisTemplate.opsForValue().set(keyOf(session.sessionId()), session, SESSION_TTL);
+            } catch (Exception e) {
+                log.warn("Redis write failed, session stored in-memory only: {}", e.getMessage());
+            }
+        }
     }
 
     private String keyOf(String sessionId) {
