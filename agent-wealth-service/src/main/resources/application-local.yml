@@ -4,6 +4,9 @@ server:
   port: 8094
 
 spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.autoconfigure.anthropic.AnthropicAutoConfiguration
   data:
     redis:
       host: localhost
@@ -11,17 +14,13 @@ spring:
   kafka:
     bootstrap-servers: localhost:29092
   ai:
-    ollama:
-      base-url: http://localhost:11434
-      chat:
-        model: llama3.1
-        options:
-          temperature: 0.1
-          num-predict: 500
-    anthropic:
-      enabled: false
     openai:
-      enabled: false
+      api-key: ollama
+      base-url: http://localhost:11434/v1
+      chat:
+        options:
+          model: llama3.1
+          temperature: 0.1
 
 agent:
   llm:

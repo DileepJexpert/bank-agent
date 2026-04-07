@@ -39,8 +39,7 @@ public class LlmConfig {
     public ChatClient chatClient(
             ObjectProvider<AnthropicChatModel> anthropicProvider,
             ObjectProvider<OpenAiChatModel> openAiProvider,
-            ObjectProvider<OllamaChatModel> ollamaProvider,
-            ChatClient.Builder builder) {
+            ObjectProvider<OllamaChatModel> ollamaProvider) {
 
         String provider = llmProviderConfig.getProvider().toLowerCase();
         log.info("Initialising ChatClient with LLM provider: {}, model: {}",
