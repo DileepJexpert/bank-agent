@@ -4,9 +4,6 @@ server:
   port: 8097
 
 spring:
-  autoconfigure:
-    exclude:
-      - org.springframework.ai.autoconfigure.anthropic.AnthropicAutoConfiguration
   datasource:
     url: jdbc:postgresql://localhost:5432/internal_ops
     username: platform
@@ -26,14 +23,12 @@ spring:
   batch:
     jdbc:
       initialize-schema: always
-  ai:
-    openai:
-      api-key: ollama
-      base-url: http://localhost:11434/v1
-      chat:
-        options:
-          model: llama3.1
-          temperature: 0.1
+
+llm:
+  ollama:
+    enabled: true
+    base-url: http://localhost:11434
+    model: llama3.1
 
 agent:
   llm:
@@ -48,4 +43,3 @@ agent:
 logging:
   level:
     com.idfcfirstbank.agent.internalops: DEBUG
-    org.springframework.ai: DEBUG

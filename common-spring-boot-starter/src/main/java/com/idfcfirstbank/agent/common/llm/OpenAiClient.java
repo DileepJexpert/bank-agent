@@ -6,19 +6,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.web.client.ClientHttpRequestFactories;
+import org.springframework.boot.web.client.ClientHttpRequestFactorySettings;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
 /**
  * LLM client for OpenAI GPT models (also works for Mistral via base-url override).
- * Activate with: llm.provider=openai and llm.openai.api-key=sk-...
- * For Mistral: llm.provider=openai, llm.openai.base-url=https://api.mistral.ai/v1
+ * Activate with: llm.openai.enabled=true and llm.openai.api-key=sk-...
+ * For Mistral: llm.openai.base-url=https://api.mistral.ai/v1
+ * Multiple providers can be enabled simultaneously for LlmRouter failover.
  */
 @Component
-@ConditionalOnProperty(name = "llm.provider", havingValue = "openai")
+@ConditionalOnProperty(name = "llm.openai.enabled", havingValue = "true")
 public class OpenAiClient implements LlmClient {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAiClient.class);
@@ -30,18 +34,23 @@ public class OpenAiClient implements LlmClient {
     public OpenAiClient(
             @Value("${llm.openai.api-key:}") String apiKey,
             @Value("${llm.openai.model:gpt-4o}") String model,
-            @Value("${llm.openai.base-url:https://api.openai.com}") String baseUrl) {
+            @Value("${llm.openai.base-url:https://api.openai.com}") String baseUrl,
+            @Value("${llm.timeout:30s}") Duration timeout) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException(
-                    "llm.openai.api-key must be set when llm.provider=openai");
+                    "llm.openai.api-key must be set when llm.openai.enabled=true");
         }
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
+                .requestFactory(ClientHttpRequestFactories.get(
+                        ClientHttpRequestFactorySettings.DEFAULTS
+                                .withConnectTimeout(timeout)
+                                .withReadTimeout(timeout)))
                 .defaultHeader("Authorization", "Bearer " + apiKey)
                 .defaultHeader("Content-Type", "application/json")
                 .build();
         this.model = model;
-        log.info("LLM Provider: OpenAI @ {}, model: {}", baseUrl, model);
+        log.info("LLM Provider: OpenAI @ {}, model: {}, timeout: {}", baseUrl, model, timeout);
     }
 
     @Override
@@ -118,8 +127,8 @@ public class OpenAiClient implements LlmClient {
             return message.path("content").asText();
 
         } catch (org.springframework.web.client.RestClientException e) {
-            log.warn("OpenAI tool call failed (HTTP error), retrying without tools: {}", e.getMessage());
-            return chat(systemPrompt, userMessage);
+            log.warn("OpenAI tool call failed (HTTP error), letting LlmRouter fail over: {}", e.getMessage());
+            throw e;  // rethrow so LlmRouter can try the next provider
         } catch (Exception e) {
             log.error("OpenAI tool call failed", e);
             throw new RuntimeException("OpenAI tool call failed: " + e.getMessage(), e);

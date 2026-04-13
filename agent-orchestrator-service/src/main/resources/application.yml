@@ -28,21 +28,27 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
 # --- LLM Provider Configuration ---
-# Switch provider by changing llm.provider — no code change needed.
-# Options: ollama (default), anthropic, openai, azure
+# Enable one or more providers via llm.<provider>.enabled=true
+# Multiple providers can be enabled simultaneously for LlmRouter failover.
+# llm.provider selects the primary; others are used as fallbacks.
 llm:
   provider: ${LLM_PROVIDER:ollama}
+  timeout: ${LLM_TIMEOUT:30s}
   ollama:
+    enabled: ${LLM_OLLAMA_ENABLED:true}
     base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
     model: ${OLLAMA_MODEL:llama3.1}
   anthropic:
+    enabled: ${LLM_ANTHROPIC_ENABLED:false}
     api-key: ${ANTHROPIC_API_KEY:}
     model: ${ANTHROPIC_MODEL:claude-sonnet-4-20250514}
   openai:
+    enabled: ${LLM_OPENAI_ENABLED:false}
     api-key: ${OPENAI_API_KEY:}
     model: ${OPENAI_MODEL:gpt-4o}
     base-url: ${OPENAI_BASE_URL:https://api.openai.com}
   azure:
+    enabled: ${LLM_AZURE_ENABLED:false}
     endpoint: ${AZURE_OPENAI_ENDPOINT:}
     api-key: ${AZURE_OPENAI_KEY:}
     deployment: ${AZURE_OPENAI_DEPLOYMENT:gpt-4o}

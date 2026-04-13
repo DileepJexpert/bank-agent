@@ -5,24 +5,6 @@ spring:
   application:
     name: agent-internal-ops-service
 
-  # --- Spring AI LLM Configuration ---
-  ai:
-    anthropic:
-      api-key: ${LLM_API_KEY:}
-      chat:
-        options:
-          model: claude-sonnet-4-20250514
-          max-tokens: 4096
-          temperature: 0.7
-
-    openai:
-      api-key: ${OPENAI_API_KEY:}
-      chat:
-        options:
-          model: gpt-4o
-          max-tokens: 4096
-          temperature: 0.7
-
   # --- Redis ---
   data:
     redis:
@@ -71,11 +53,36 @@ spring:
     job:
       enabled: false
 
+# --- LLM Provider Configuration ---
+# Enable one or more providers via llm.<provider>.enabled=true
+# Multiple providers can be enabled simultaneously for LlmRouter failover.
+llm:
+  timeout: ${LLM_TIMEOUT:30s}
+  ollama:
+    enabled: ${LLM_OLLAMA_ENABLED:true}
+    base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+    model: ${OLLAMA_MODEL:llama3.1}
+  anthropic:
+    enabled: ${LLM_ANTHROPIC_ENABLED:false}
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: ${ANTHROPIC_MODEL:claude-sonnet-4-20250514}
+  openai:
+    enabled: ${LLM_OPENAI_ENABLED:false}
+    api-key: ${OPENAI_API_KEY:}
+    model: ${OPENAI_MODEL:gpt-4o}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+  azure:
+    enabled: ${LLM_AZURE_ENABLED:false}
+    endpoint: ${AZURE_OPENAI_ENDPOINT:}
+    api-key: ${AZURE_OPENAI_KEY:}
+    deployment: ${AZURE_OPENAI_DEPLOYMENT:gpt-4o}
+    api-version: ${AZURE_OPENAI_API_VERSION:2024-02-15-preview}
+
 # --- Agent Platform Configuration ---
 agent:
   llm:
-    provider: ${LLM_PROVIDER:anthropic}
-    model-name: ${LLM_MODEL:claude-sonnet-4-20250514}
+    provider: ${LLM_PROVIDER:ollama}
+    model-name: ${LLM_MODEL:llama3.1}
     api-key: ${LLM_API_KEY:}
     temperature: 0.7
     max-tokens: 4096
@@ -112,5 +119,4 @@ springdoc:
 logging:
   level:
     com.idfcfirstbank.agent.internalops: DEBUG
-    org.springframework.ai: INFO
     org.springframework.batch: INFO

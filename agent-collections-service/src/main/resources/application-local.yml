@@ -4,9 +4,6 @@ server:
   port: 8095
 
 spring:
-  autoconfigure:
-    exclude:
-      - org.springframework.ai.autoconfigure.anthropic.AnthropicAutoConfiguration
   datasource:
     url: jdbc:postgresql://localhost:5432/collections_agent
     username: platform
@@ -23,14 +20,12 @@ spring:
       port: 6379
   kafka:
     bootstrap-servers: localhost:29092
-  ai:
-    openai:
-      api-key: ollama
-      base-url: http://localhost:11434/v1
-      chat:
-        options:
-          model: llama3.1
-          temperature: 0.1
+
+llm:
+  ollama:
+    enabled: true
+    base-url: http://localhost:11434
+    model: llama3.1
 
 agent:
   llm:
@@ -44,4 +39,3 @@ agent:
 logging:
   level:
     com.idfcfirstbank.agent.collections: DEBUG
-    org.springframework.ai: DEBUG

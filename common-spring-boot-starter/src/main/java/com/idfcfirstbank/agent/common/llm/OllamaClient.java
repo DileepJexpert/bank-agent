@@ -6,19 +6,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.web.client.ClientHttpRequestFactories;
+import org.springframework.boot.web.client.ClientHttpRequestFactorySettings;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
 /**
  * LLM client for Ollama (local, free, no API key needed).
- * Default provider if llm.provider is not set.
+ * Default provider if llm.ollama.enabled is not set.
  * Supports llama3.1, mistral, gemma2, phi3, and any other Ollama model.
+ * Multiple providers can be enabled simultaneously for LlmRouter failover.
  */
 @Component
-@ConditionalOnProperty(name = "llm.provider", havingValue = "ollama", matchIfMissing = true)
+@ConditionalOnProperty(name = "llm.ollama.enabled", havingValue = "true", matchIfMissing = true)
 public class OllamaClient implements LlmClient {
 
     private static final Logger log = LoggerFactory.getLogger(OllamaClient.class);
@@ -29,13 +33,18 @@ public class OllamaClient implements LlmClient {
 
     public OllamaClient(
             @Value("${llm.ollama.base-url:http://localhost:11434}") String baseUrl,
-            @Value("${llm.ollama.model:llama3.1}") String model) {
+            @Value("${llm.ollama.model:llama3.1}") String model,
+            @Value("${llm.timeout:30s}") Duration timeout) {
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
+                .requestFactory(ClientHttpRequestFactories.get(
+                        ClientHttpRequestFactorySettings.DEFAULTS
+                                .withConnectTimeout(timeout)
+                                .withReadTimeout(timeout)))
                 .defaultHeader("Content-Type", "application/json")
                 .build();
         this.model = model;
-        log.info("LLM Provider: Ollama @ {}, model: {}", baseUrl, model);
+        log.info("LLM Provider: Ollama @ {}, model: {}, timeout: {}", baseUrl, model, timeout);
     }
 
     @Override

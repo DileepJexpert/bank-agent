@@ -346,11 +346,9 @@ public class CollectionsService {
 
         try {
             String userPrompt = String.format(
-                    "Customer ID: %s\nLoan ID: %s\nOverdue Amount: %s\nCustomer message: %s\n\n"
+                    "Overdue Amount: %s\nCustomer message: %s\n\n"
                             + "Please assist this customer with their collections query. "
                             + "Be empathetic and professional.",
-                    request.customerId(),
-                    request.loanId() != null ? request.loanId() : "N/A",
                     request.overdueAmount() != null ? request.overdueAmount().toPlainString() : "N/A",
                     request.message() != null ? request.message() : "");
 
@@ -463,12 +461,10 @@ public class CollectionsService {
 
     private String buildPaymentPlanPrompt(CollectionsRequest request) {
         return String.format("""
-                Customer ID: %s
-                Loan ID: %s
                 Overdue Amount: INR %s
                 Customer message: %s
 
-                The customer is requesting a restructured EMI payment plan for their overdue account.
+                The customer is requesting a restructured EMI payment plan for their overdue loan account.
                 Please negotiate a feasible repayment schedule considering:
                 1. The total overdue amount and any applicable late fees
                 2. The customer's ability to pay (based on their message)
@@ -476,8 +472,6 @@ public class CollectionsService {
                 4. Present 2-3 options with clear EMI amounts and timelines
                 5. Be empathetic but ensure the bank's interests are protected
                 """,
-                request.customerId(),
-                request.loanId() != null ? request.loanId() : "N/A",
                 request.overdueAmount() != null ? request.overdueAmount().toPlainString() : "N/A",
                 request.message() != null ? request.message() : "");
     }
@@ -486,8 +480,6 @@ public class CollectionsService {
                                          BigDecimal discountPct,
                                          BigDecimal settlementAmount) {
         return String.format("""
-                Customer ID: %s
-                Loan ID: %s
                 Original Overdue Amount: INR %s
                 Approved Discount: %s%%
                 Settlement Amount: INR %s
@@ -501,8 +493,6 @@ public class CollectionsService {
                 5. Impact on credit score: settled status vs continued default
                 6. This is a one-time offer subject to bank approval
                 """,
-                request.customerId(),
-                request.loanId() != null ? request.loanId() : "N/A",
                 request.overdueAmount() != null ? request.overdueAmount().toPlainString() : "N/A",
                 discountPct.toPlainString(),
                 settlementAmount.toPlainString(),

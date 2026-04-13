@@ -6,19 +6,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.web.client.ClientHttpRequestFactories;
+import org.springframework.boot.web.client.ClientHttpRequestFactorySettings;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
 /**
  * LLM client for Azure OpenAI Service.
- * Activate with: llm.provider=azure
+ * Activate with: llm.azure.enabled=true
  * Required: llm.azure.endpoint, llm.azure.api-key, llm.azure.deployment
+ * Multiple providers can be enabled simultaneously for LlmRouter failover.
  */
 @Component
-@ConditionalOnProperty(name = "llm.provider", havingValue = "azure")
+@ConditionalOnProperty(name = "llm.azure.enabled", havingValue = "true")
 public class AzureOpenAiClient implements LlmClient {
 
     private static final Logger log = LoggerFactory.getLogger(AzureOpenAiClient.class);
@@ -32,15 +36,20 @@ public class AzureOpenAiClient implements LlmClient {
             @Value("${llm.azure.endpoint:}") String endpoint,
             @Value("${llm.azure.api-key:}") String apiKey,
             @Value("${llm.azure.deployment:gpt-4o}") String deploymentName,
-            @Value("${llm.azure.api-version:2024-02-15-preview}") String apiVersion) {
+            @Value("${llm.azure.api-version:2024-02-15-preview}") String apiVersion,
+            @Value("${llm.timeout:30s}") Duration timeout) {
         this.restClient = RestClient.builder()
                 .baseUrl(endpoint)
+                .requestFactory(ClientHttpRequestFactories.get(
+                        ClientHttpRequestFactorySettings.DEFAULTS
+                                .withConnectTimeout(timeout)
+                                .withReadTimeout(timeout)))
                 .defaultHeader("api-key", apiKey)
                 .defaultHeader("Content-Type", "application/json")
                 .build();
         this.deploymentName = deploymentName;
         this.apiVersion = apiVersion;
-        log.info("LLM Provider: Azure OpenAI, deployment: {}", deploymentName);
+        log.info("LLM Provider: Azure OpenAI, deployment: {}, timeout: {}", deploymentName, timeout);
     }
 
     @Override
@@ -81,7 +90,7 @@ public class AzureOpenAiClient implements LlmClient {
         }
         throw new UnsupportedOperationException(
                 "AzureOpenAiClient does not support tool-calling yet. "
-                + "Use llm.provider=openai for tool-calling support.");
+                + "Use llm.azure.enabled=false and llm.openai.enabled=true for tool-calling support.");
     }
 
     @Override

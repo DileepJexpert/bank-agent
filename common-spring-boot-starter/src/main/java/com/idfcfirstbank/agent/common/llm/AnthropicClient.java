@@ -6,19 +6,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.web.client.ClientHttpRequestFactories;
+import org.springframework.boot.web.client.ClientHttpRequestFactorySettings;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
 /**
  * LLM client for Anthropic Claude.
- * Activate with: llm.provider=anthropic and llm.anthropic.api-key=sk-ant-...
+ * Activate with: llm.anthropic.enabled=true and llm.anthropic.api-key=sk-ant-...
+ * Multiple providers can be enabled simultaneously for LlmRouter failover.
  */
 @Component
-@ConditionalOnProperty(name = "llm.provider", havingValue = "anthropic")
+@ConditionalOnProperty(name = "llm.anthropic.enabled", havingValue = "true")
 public class AnthropicClient implements LlmClient {
 
     private static final Logger log = LoggerFactory.getLogger(AnthropicClient.class);
@@ -29,19 +33,24 @@ public class AnthropicClient implements LlmClient {
 
     public AnthropicClient(
             @Value("${llm.anthropic.api-key:}") String apiKey,
-            @Value("${llm.anthropic.model:claude-sonnet-4-20250514}") String model) {
+            @Value("${llm.anthropic.model:claude-sonnet-4-20250514}") String model,
+            @Value("${llm.timeout:30s}") Duration timeout) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException(
-                    "llm.anthropic.api-key must be set when llm.provider=anthropic");
+                    "llm.anthropic.api-key must be set when llm.anthropic.enabled=true");
         }
         this.restClient = RestClient.builder()
                 .baseUrl("https://api.anthropic.com")
+                .requestFactory(ClientHttpRequestFactories.get(
+                        ClientHttpRequestFactorySettings.DEFAULTS
+                                .withConnectTimeout(timeout)
+                                .withReadTimeout(timeout)))
                 .defaultHeader("x-api-key", apiKey)
                 .defaultHeader("anthropic-version", "2023-06-01")
                 .defaultHeader("Content-Type", "application/json")
                 .build();
         this.model = model;
-        log.info("LLM Provider: Anthropic, model: {}", model);
+        log.info("LLM Provider: Anthropic, model: {}, timeout: {}", model, timeout);
     }
 
     @Override
@@ -124,8 +133,8 @@ public class AnthropicClient implements LlmClient {
             return text.toString();
 
         } catch (RestClientException e) {
-            log.warn("Anthropic tool call failed (HTTP error), retrying without tools: {}", e.getMessage());
-            return chat(systemPrompt, userMessage);
+            log.warn("Anthropic tool call failed (HTTP error), letting LlmRouter fail over: {}", e.getMessage());
+            throw e;  // rethrow so LlmRouter can try the next provider
         } catch (Exception e) {
             log.error("Anthropic tool call failed", e);
             throw new RuntimeException("Anthropic tool call failed: " + e.getMessage(), e);
