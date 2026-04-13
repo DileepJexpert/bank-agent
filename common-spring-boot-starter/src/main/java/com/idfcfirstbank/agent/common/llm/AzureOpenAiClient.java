@@ -38,6 +38,14 @@ public class AzureOpenAiClient implements LlmClient {
             @Value("${llm.azure.deployment:gpt-4o}") String deploymentName,
             @Value("${llm.azure.api-version:2024-02-15-preview}") String apiVersion,
             @Value("${llm.timeout:30s}") Duration timeout) {
+        if (endpoint == null || endpoint.isBlank()) {
+            throw new IllegalStateException(
+                    "llm.azure.endpoint must be set when llm.azure.enabled=true");
+        }
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException(
+                    "llm.azure.api-key must be set when llm.azure.enabled=true");
+        }
         this.restClient = RestClient.builder()
                 .baseUrl(endpoint)
                 .requestFactory(ClientHttpRequestFactories.get(

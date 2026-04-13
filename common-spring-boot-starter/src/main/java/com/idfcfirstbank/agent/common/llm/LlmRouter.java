@@ -2,14 +2,21 @@ package com.idfcfirstbank.agent.common.llm;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
  * Routes LLM calls to available providers with automatic failover.
  * <p>
- * Priority: whichever provider bean is active (set via llm.provider).
+ * Primary provider selection: if {@code llm.provider} is set, the matching
+ * enabled client is placed first; any other enabled clients follow as
+ * fallbacks. If {@code llm.provider} is unset or does not match any enabled
+ * client, the discovery order of Spring beans is preserved.
+ * <p>
  * If the primary provider fails, falls back to the next available provider.
  * If ALL providers fail, returns a safe fallback message instead of throwing.
  * <p>
@@ -25,15 +32,36 @@ public class LlmRouter {
 
     private final List<LlmClient> clients;
 
-    public LlmRouter(List<LlmClient> clients) {
-        this.clients = clients;
-        if (clients.isEmpty()) {
+    public LlmRouter(List<LlmClient> clients,
+                     @Value("${llm.provider:}") String primaryProvider) {
+        this.clients = orderByPrimary(clients, primaryProvider);
+        if (this.clients.isEmpty()) {
             log.warn("LlmRouter: no LLM providers found. All chat calls will return fallback message.");
         } else {
-            log.info("LlmRouter initialised with {} provider(s): {}",
-                    clients.size(),
-                    clients.stream().map(LlmClient::getProvider).toList());
+            log.info("LlmRouter initialised with {} provider(s) (primary={}): {}",
+                    this.clients.size(),
+                    this.clients.get(0).getProvider(),
+                    this.clients.stream().map(LlmClient::getProvider).toList());
         }
+    }
+
+    /**
+     * Sort clients so that the one matching {@code primaryProvider} (by prefix
+     * on {@link LlmClient#getProvider()}, e.g. "ollama" matches "ollama:llama3.1")
+     * is first. All other enabled clients retain their relative order as
+     * fallbacks.
+     */
+    private static List<LlmClient> orderByPrimary(List<LlmClient> clients, String primaryProvider) {
+        List<LlmClient> ordered = new ArrayList<>(clients);
+        if (primaryProvider == null || primaryProvider.isBlank()) {
+            return ordered;
+        }
+        String needle = primaryProvider.toLowerCase().trim();
+        ordered.sort(Comparator.comparingInt(c -> {
+            String name = c.getProvider() == null ? "" : c.getProvider().toLowerCase();
+            return (name.equals(needle) || name.startsWith(needle + ":")) ? 0 : 1;
+        }));
+        return ordered;
     }
 
     /**

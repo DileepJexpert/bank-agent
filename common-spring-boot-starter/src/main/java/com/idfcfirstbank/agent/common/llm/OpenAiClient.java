@@ -114,10 +114,14 @@ public class OpenAiClient implements LlmClient {
                     .body(String.class);
 
             JsonNode root = MAPPER.readTree(response);
-            JsonNode message = root.path("choices").get(0).path("message");
+            JsonNode message = root.path("choices").path(0).path("message");
 
             if (message.has("tool_calls")) {
-                JsonNode function = message.path("tool_calls").get(0).path("function");
+                JsonNode function = message.path("tool_calls").path(0).path("function");
+                if (function.path("name").isMissingNode()) {
+                    throw new IllegalStateException(
+                            "OpenAI returned tool_call without function name: " + response);
+                }
                 JsonNode arguments = MAPPER.readTree(function.path("arguments").asText("{}"));
                 return MAPPER.writeValueAsString(Map.of(
                         "tool", function.path("name").asText(),

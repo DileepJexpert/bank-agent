@@ -25,15 +25,13 @@ spring:
       initialize-schema: always
 
 llm:
+  timeout: 60s
   ollama:
     enabled: true
     base-url: http://localhost:11434
     model: llama3.1
 
 agent:
-  llm:
-    provider: ollama
-    model-name: llama3.1
   vault:
     base-url: http://localhost:8082
   mcp:

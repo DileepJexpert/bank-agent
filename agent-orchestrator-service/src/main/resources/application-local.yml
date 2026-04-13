@@ -38,6 +38,7 @@ spring:
 # LLM - Ollama only in local profile
 llm:
   provider: ollama
+  timeout: 60s
   ollama:
     enabled: true
     base-url: http://localhost:11434
@@ -49,14 +50,6 @@ ai:
 
 # Agent config
 agent:
-  llm:
-    provider: ollama
-    model-name: llama3.1
-    api-key: not-needed-for-ollama
-    temperature: 0.1
-    max-tokens: 500
-    timeout: 60s
-
   vault:
     base-url: http://localhost:8082
 

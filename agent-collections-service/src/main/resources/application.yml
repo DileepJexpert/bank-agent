@@ -82,14 +82,6 @@ llm:
 
 # --- Agent Platform Configuration ---
 agent:
-  llm:
-    provider: ${LLM_PROVIDER:ollama}
-    model-name: ${LLM_MODEL:llama3.1}
-    api-key: ${LLM_API_KEY:}
-    temperature: 0.7
-    max-tokens: 4096
-    timeout: 30s
-
   vault:
     base-url: ${VAULT_POLICY_URL:http://vault-policy-service:8082}
 
