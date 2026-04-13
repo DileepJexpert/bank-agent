@@ -47,13 +47,14 @@ class WealthServiceTest {
     @Mock
     private AuditEventPublisher auditEventPublisher;
 
+    @Mock
+    private ObjectMapper objectMapper;
+
     @Captor
     private ArgumentCaptor<AuditEvent> auditEventCaptor;
 
     @InjectMocks
     private WealthService wealthService;
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private PolicyDecision allowDecision;
     private PolicyDecision denyDecision;
@@ -61,11 +62,6 @@ class WealthServiceTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        // Inject ObjectMapper via reflection since it is a final field managed by @RequiredArgsConstructor
-        var objectMapperField = WealthService.class.getDeclaredField("objectMapper");
-        objectMapperField.setAccessible(true);
-        objectMapperField.set(wealthService, objectMapper);
-
         var instanceIdField = WealthService.class.getDeclaredField("instanceId");
         instanceIdField.setAccessible(true);
         instanceIdField.set(wealthService, "test-instance");

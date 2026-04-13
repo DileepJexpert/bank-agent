@@ -287,7 +287,7 @@ class _ComplianceDashboardWidgetState extends State<ComplianceDashboardWidget> {
                   maxY: maxCount * 1.2,
                   barTouchData: BarTouchData(
                     touchTooltipData: BarTouchTooltipData(
-                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                      getTooltipItems: (group, groupIndex, rod, rodIndex) {
                         final entry = trend[group.x.toInt()];
                         return BarTooltipItem(
                           '${entry['date']}\n${rod.toY.toInt()} violations',
