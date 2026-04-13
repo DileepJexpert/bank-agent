@@ -1,10 +1,9 @@
 package com.idfcfirstbank.agent.orchestrator.config;
 
 import com.idfcfirstbank.agent.common.llm.LlmRouter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Configuration;
 
 /**
@@ -12,22 +11,15 @@ import org.springframework.context.annotation.Configuration;
  * Provider is selected via llm.provider in application.yml.
  * No code change needed to switch providers — only YAML change.
  */
+@Slf4j
 @Configuration
+@RequiredArgsConstructor
 public class LlmConfig {
 
-    private static final Logger log = LoggerFactory.getLogger(LlmConfig.class);
+    private final LlmRouter llmRouter;
 
-    @Value("${llm.provider:ollama}")
-    private String provider;
-
-    /**
-     * Log active provider at startup. LlmRouter is auto-configured via
-     * common-spring-boot-starter based on llm.provider property.
-     */
-    @Bean
-    public String llmProviderInfo(LlmRouter llmRouter) {
-        String active = llmRouter.getActiveProvider();
-        log.info("Orchestrator using LLM provider: {}", active);
-        return active;
+    @PostConstruct
+    void logLlmProvider() {
+        log.info("Orchestrator using LLM provider: {}", llmRouter.getActiveProvider());
     }
 }

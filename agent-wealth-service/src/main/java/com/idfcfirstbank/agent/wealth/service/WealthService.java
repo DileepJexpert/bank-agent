@@ -4,7 +4,6 @@ import com.idfcfirstbank.agent.common.kafka.AuditEventPublisher;
 import com.idfcfirstbank.agent.common.model.AuditEvent;
 import com.idfcfirstbank.agent.common.vault.PolicyDecision;
 import com.idfcfirstbank.agent.common.vault.VaultClient;
-import com.idfcfirstbank.agent.wealth.model.PortfolioSummary;
 import com.idfcfirstbank.agent.wealth.model.WealthRequest;
 import com.idfcfirstbank.agent.wealth.model.WealthResponse;
 import com.idfcfirstbank.agent.wealth.tools.WealthTools;
