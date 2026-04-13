@@ -4,28 +4,21 @@ server:
   port: 8094
 
 spring:
-  autoconfigure:
-    exclude:
-      - org.springframework.ai.autoconfigure.anthropic.AnthropicAutoConfiguration
   data:
     redis:
       host: localhost
       port: 6379
   kafka:
     bootstrap-servers: localhost:29092
-  ai:
-    openai:
-      api-key: ollama
-      base-url: http://localhost:11434/v1
-      chat:
-        options:
-          model: llama3.1
-          temperature: 0.1
+
+llm:
+  timeout: 60s
+  ollama:
+    enabled: true
+    base-url: http://localhost:11434
+    model: llama3.1
 
 agent:
-  llm:
-    provider: ollama
-    model-name: llama3.1
   vault:
     base-url: http://localhost:8082
   mcp:
@@ -36,4 +29,3 @@ agent:
 logging:
   level:
     com.idfcfirstbank.agent.wealth: DEBUG
-    org.springframework.ai: DEBUG

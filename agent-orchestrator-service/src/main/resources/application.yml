@@ -5,40 +5,6 @@ spring:
   application:
     name: agent-orchestrator-service
 
-  # --- Spring AI LLM Configuration ---
-  # Switch providers by changing agent.llm.provider and the corresponding spring.ai.* block.
-  ai:
-    # Anthropic (default provider)
-    anthropic:
-      api-key: ${LLM_API_KEY:}
-      chat:
-        options:
-          model: claude-sonnet-4-20250514
-          max-tokens: 4096
-          temperature: 0.7
-
-    # OpenAI (enable by setting agent.llm.provider=openai)
-    openai:
-      api-key: ${OPENAI_API_KEY:}
-      chat:
-        options:
-          model: gpt-4o
-          max-tokens: 4096
-          temperature: 0.7
-      # For Azure OpenAI, override base-url:
-      # base-url: https://<your-resource>.openai.azure.com
-      # For Mistral, override base-url:
-      # base-url: https://api.mistral.ai/v1
-
-    # Ollama (enable by setting agent.llm.provider=ollama and ai.enabled=true)
-    ollama:
-      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
-      chat:
-        model: ${OLLAMA_MODEL:llama3.1}
-        options:
-          temperature: 0.1
-          num-predict: 500
-
   # --- Redis ---
   data:
     redis:
@@ -61,23 +27,35 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
-# --- AI Intent Detection & Response Generation ---
-# Set to true to enable LLM-based intent detection (via Ollama/Llama 3.1)
-# Set to false to fallback to keyword matching only
-ai:
-  enabled: ${AI_ENABLED:true}
+# --- LLM Provider Configuration ---
+# Enable one or more providers via llm.<provider>.enabled=true
+# Multiple providers can be enabled simultaneously for LlmRouter failover.
+# llm.provider selects the primary; others are used as fallbacks.
+llm:
+  provider: ${LLM_PROVIDER:ollama}
+  timeout: ${LLM_TIMEOUT:30s}
+  ollama:
+    enabled: ${LLM_OLLAMA_ENABLED:true}
+    base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+    model: ${OLLAMA_MODEL:llama3.1}
+  anthropic:
+    enabled: ${LLM_ANTHROPIC_ENABLED:false}
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: ${ANTHROPIC_MODEL:claude-sonnet-4-20250514}
+  openai:
+    enabled: ${LLM_OPENAI_ENABLED:false}
+    api-key: ${OPENAI_API_KEY:}
+    model: ${OPENAI_MODEL:gpt-4o}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+  azure:
+    enabled: ${LLM_AZURE_ENABLED:false}
+    endpoint: ${AZURE_OPENAI_ENDPOINT:}
+    api-key: ${AZURE_OPENAI_KEY:}
+    deployment: ${AZURE_OPENAI_DEPLOYMENT:gpt-4o}
+    api-version: ${AZURE_OPENAI_API_VERSION:2024-02-15-preview}
 
 # --- Agent Platform Configuration ---
 agent:
-  llm:
-    # Supported: anthropic, openai, ollama, azure-openai, mistral
-    provider: ${LLM_PROVIDER:anthropic}
-    model-name: ${LLM_MODEL:claude-sonnet-4-20250514}
-    api-key: ${LLM_API_KEY:}
-    temperature: 0.7
-    max-tokens: 4096
-    timeout: 30s
-
   vault:
     base-url: ${VAULT_POLICY_URL:http://vault-policy-service:8082}
 
@@ -110,5 +88,4 @@ springdoc:
 logging:
   level:
     com.idfcfirstbank.agent.orchestrator: DEBUG
-    org.springframework.ai: INFO
     org.springframework.statemachine: INFO

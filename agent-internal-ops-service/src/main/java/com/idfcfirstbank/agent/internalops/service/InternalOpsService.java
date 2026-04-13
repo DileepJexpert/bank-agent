@@ -7,7 +7,7 @@ import com.idfcfirstbank.agent.common.vault.VaultClient;
 import com.idfcfirstbank.agent.internalops.model.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
+import com.idfcfirstbank.agent.common.llm.LlmRouter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -22,7 +22,21 @@ import java.util.*;
 @RequiredArgsConstructor
 public class InternalOpsService {
 
-    private final ChatClient chatClient;
+    private static final String SYSTEM_PROMPT = """
+            You are the Internal Operations Agent for IDFC First Bank. You serve bank employees
+            (not customers). You handle:
+            - MIS Report generation (daily transaction summaries by branch)
+            - Reconciliation status queries
+            - Compliance queries (KYC renewals, regulatory checks)
+            - IT Helpdesk queries (password resets, system access)
+            - HR queries (leave balance, policies)
+
+            Always maintain a professional tone suitable for internal communications.
+            Provide accurate, structured data in your responses.
+            Flag any compliance concerns immediately.
+            """;
+
+    private final LlmRouter llmRouter;
     private final VaultClient vaultClient;
     private final AuditEventPublisher auditEventPublisher;
     private final RestTemplate restTemplate;
@@ -206,8 +220,7 @@ public class InternalOpsService {
         try {
             String complianceData = fetchComplianceData(request);
 
-            String response = chatClient.prompt()
-                    .user(String.format("""
+            String response = llmRouter.chat(SYSTEM_PROMPT, String.format("""
                             Employee %s asks: %s
 
                             Here is the current compliance data from the CRM system:
@@ -215,9 +228,7 @@ public class InternalOpsService {
 
                             Please provide a comprehensive compliance summary addressing the employee's query.
                             Include specific numbers, deadlines, and any regulatory concerns.
-                            """, request.employeeId(), request.message(), complianceData))
-                    .call()
-                    .content();
+                            """, request.employeeId(), request.message(), complianceData));
 
             return new InternalOpsResponse(request.sessionId(), response, "COMPLIANCE_QUERY", false, null);
 
@@ -255,15 +266,12 @@ public class InternalOpsService {
 
         // Fall back to LLM for unknown queries
         try {
-            String response = chatClient.prompt()
-                    .user(String.format("""
+            String response = llmRouter.chat(SYSTEM_PROMPT, String.format("""
                             Employee %s has an IT support question: %s
 
                             Provide helpful guidance based on standard IDFC First Bank IT procedures.
                             If you don't know the specific answer, suggest contacting IT support at ext. 4357.
-                            """, employeeId, query))
-                    .call()
-                    .content();
+                            """, employeeId, query));
 
             return new InternalOpsResponse(null, response, "IT_HELPDESK", false, null);
         } catch (Exception e) {
@@ -354,10 +362,8 @@ public class InternalOpsService {
 
     private InternalOpsResponse handleGeneralQuery(InternalOpsRequest request) {
         try {
-            String response = chatClient.prompt()
-                    .user(String.format("Employee %s asks: %s", request.employeeId(), request.message()))
-                    .call()
-                    .content();
+            String response = llmRouter.chat(SYSTEM_PROMPT,
+                    String.format("Employee %s asks: %s", request.employeeId(), request.message()));
 
             return new InternalOpsResponse(request.sessionId(), response, "GENERAL", false, null);
         } catch (Exception e) {

@@ -18,8 +18,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.client.ChatClient;
+import com.idfcfirstbank.agent.common.llm.LlmRouter;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -36,7 +37,7 @@ import static org.mockito.Mockito.*;
 class WealthServiceTest {
 
     @Mock
-    private ChatClient chatClient;
+    private LlmRouter llmRouter;
 
     @Mock
     private VaultClient vaultClient;
@@ -47,14 +48,8 @@ class WealthServiceTest {
     @Mock
     private AuditEventPublisher auditEventPublisher;
 
-    @Mock
-    private ChatClient.ChatClientRequestSpec requestSpec;
-
-    @Mock
-    private ChatClient.ChatClientRequestSpec functionSpec;
-
-    @Mock
-    private ChatClient.CallResponseSpec callResponseSpec;
+    @Spy
+    private ObjectMapper objectMapper = new ObjectMapper();
 
     @Captor
     private ArgumentCaptor<AuditEvent> auditEventCaptor;
@@ -62,19 +57,12 @@ class WealthServiceTest {
     @InjectMocks
     private WealthService wealthService;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
     private PolicyDecision allowDecision;
     private PolicyDecision denyDecision;
     private PolicyDecision escalateDecision;
 
     @BeforeEach
     void setUp() throws Exception {
-        // Inject ObjectMapper via reflection since it is a final field managed by @RequiredArgsConstructor
-        var objectMapperField = WealthService.class.getDeclaredField("objectMapper");
-        objectMapperField.setAccessible(true);
-        objectMapperField.set(wealthService, objectMapper);
-
         var instanceIdField = WealthService.class.getDeclaredField("instanceId");
         instanceIdField.setAccessible(true);
         instanceIdField.set(wealthService, "test-instance");
@@ -245,12 +233,8 @@ class WealthServiceTest {
             when(wealthTools.getRiskProfileRaw("CUST007"))
                     .thenReturn("{riskCategory: 'MODERATE', score: 55}");
 
-            when(chatClient.prompt()).thenReturn(requestSpec);
-            when(requestSpec.user(anyString())).thenReturn(requestSpec);
-            when(requestSpec.functions(any(String[].class))).thenReturn(functionSpec);
-            when(functionSpec.call()).thenReturn(callResponseSpec);
-            when(callResponseSpec.content())
-                    .thenReturn("Based on your moderate risk profile, I recommend diversified equity funds.");
+            when(llmRouter.chat(anyString(), anyString())).thenReturn(
+                    "Based on your moderate risk profile, I recommend diversified equity funds.");
 
             WealthResponse response = wealthService.processQuery(request);
 
@@ -273,12 +257,7 @@ class WealthServiceTest {
             when(wealthTools.getRiskProfileRaw("CUST008"))
                     .thenReturn("{riskCategory: 'CONSERVATIVE', score: 25}");
 
-            when(chatClient.prompt()).thenReturn(requestSpec);
-            when(requestSpec.user(anyString())).thenReturn(requestSpec);
-            when(requestSpec.functions(any(String[].class))).thenReturn(functionSpec);
-            when(functionSpec.call()).thenReturn(callResponseSpec);
-            when(callResponseSpec.content())
-                    .thenReturn("Given your conservative risk profile, high-return funds may not be suitable.");
+            when(llmRouter.chat(anyString(), anyString())).thenReturn("mocked wealth response");
 
             WealthResponse response = wealthService.processQuery(request);
 
@@ -297,7 +276,7 @@ class WealthServiceTest {
                     .thenReturn(allowDecision);
             when(wealthTools.getRiskProfileRaw("CUST009"))
                     .thenReturn("{riskCategory: 'MODERATE', score: 50}");
-            when(chatClient.prompt()).thenThrow(new RuntimeException("LLM service unavailable"));
+            when(llmRouter.chat(anyString(), anyString())).thenThrow(new RuntimeException("LLM service unavailable"));
 
             WealthResponse response = wealthService.processQuery(request);
 
