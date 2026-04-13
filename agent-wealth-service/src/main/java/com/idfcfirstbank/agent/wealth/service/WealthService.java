@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -280,29 +281,66 @@ public class WealthService {
         );
     }
 
+    /** Allow-listed parameter keys forwarded to the LLM for investment queries. */
+    private static final List<String> ALLOWED_INVESTMENT_PARAMS = List.of(
+            "investmentHorizon", "preferredAssetClass", "existingInvestments", "goalType"
+    );
+
     /**
-     * Build a prompt for the LLM that includes risk profile context and the SEBI disclaimer requirement.
+     * Build a prompt for the LLM that includes only the allow-listed risk category
+     * (not the full risk profile payload) and sanitised request parameters.
+     * Customer ID is intentionally excluded to minimise PII sent to external LLM.
      */
     private String buildInvestmentPrompt(WealthRequest request, String riskProfile) {
+        // Extract only riskCategory from the raw JSON profile to avoid sending full payload
+        String riskCategory = extractRiskCategory(riskProfile);
+
         StringBuilder prompt = new StringBuilder();
-        prompt.append("Customer ID: ").append(request.customerId()).append("\n");
         prompt.append("Customer message: ").append(request.message()).append("\n");
-        prompt.append("Customer Risk Profile: ").append(riskProfile).append("\n");
+        prompt.append("Risk Category: ").append(riskCategory).append("\n");
 
         if (request.intent() != null) {
             prompt.append("Detected intent: ").append(request.intent()).append("\n");
         }
+
+        // Only forward allow-listed parameters — no raw IDs or PII
         if (request.parameters() != null && !request.parameters().isEmpty()) {
-            prompt.append("Extracted parameters: ").append(request.parameters()).append("\n");
+            Map<String, Object> safeParams = new LinkedHashMap<>();
+            for (String key : ALLOWED_INVESTMENT_PARAMS) {
+                if (request.parameters().containsKey(key)) {
+                    safeParams.put(key, request.parameters().get(key));
+                }
+            }
+            if (!safeParams.isEmpty()) {
+                prompt.append("Context: ").append(safeParams).append("\n");
+            }
         }
 
         prompt.append("\nIMPORTANT: You MUST consider the customer's risk profile before making ");
         prompt.append("any investment recommendations. Never suggest products that exceed the ");
         prompt.append("customer's risk tolerance.\n");
-        prompt.append("Process this customer's wealth management request using the available tools. ");
+        prompt.append("Process this customer's wealth management request. ");
         prompt.append("Provide a clear, friendly response with the relevant financial information.");
 
         return prompt.toString();
+    }
+
+    /**
+     * Extract the riskCategory field from a raw JSON risk-profile string.
+     * Falls back to the full string if parsing fails.
+     */
+    private String extractRiskCategory(String riskProfile) {
+        if (riskProfile == null || riskProfile.isBlank()) {
+            return "UNKNOWN";
+        }
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(riskProfile);
+            com.fasterxml.jackson.databind.JsonNode cat = node.path("riskCategory");
+            return cat.isMissingNode() ? "UNKNOWN" : cat.asText("UNKNOWN");
+        } catch (Exception e) {
+            log.debug("Could not parse riskProfile JSON, using raw value");
+            return riskProfile;
+        }
     }
 
     /**

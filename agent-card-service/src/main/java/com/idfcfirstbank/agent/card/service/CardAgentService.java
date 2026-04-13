@@ -339,7 +339,9 @@ public class CardAgentService {
                 return resp.getBody() != null ? resp.getBody() : Map.of();
             }
         } catch (RestClientException e) {
-            log.error("MCP call failed: {}, {}", toolPath, e.getMessage(), e);
+            // Strip query string before logging to avoid leaking PII (e.g. customerId params)
+            String safeToolPath = toolPath.contains("?") ? toolPath.substring(0, toolPath.indexOf('?')) : toolPath;
+            log.error("MCP call failed: {}, {}", safeToolPath, e.getMessage(), e);
             throw e;
         }
     }
@@ -387,13 +389,13 @@ public class CardAgentService {
             }
         }
 
-        // Include up to last 3 turns of conversation history (no raw IDs)
+        // Include up to last 3 turns of conversation history; mask any card numbers in history entries
         if (request.conversationHistory() != null && !request.conversationHistory().isEmpty()) {
             List<String> history = request.conversationHistory();
             int start = Math.max(0, history.size() - 3);
             prompt.append("Recent conversation:\n");
             history.subList(start, history.size())
-                   .forEach(e -> prompt.append("  - ").append(e).append("\n"));
+                   .forEach(e -> prompt.append("  - ").append(MaskingUtils.maskCardNumber(e)).append("\n"));
         }
 
         prompt.append("\nProcess this card request. NEVER include full card numbers in responses.");

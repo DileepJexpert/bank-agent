@@ -31,6 +31,10 @@ public class OpenAiClient implements LlmClient {
             @Value("${llm.openai.api-key:}") String apiKey,
             @Value("${llm.openai.model:gpt-4o}") String model,
             @Value("${llm.openai.base-url:https://api.openai.com}") String baseUrl) {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException(
+                    "llm.openai.api-key must be set when llm.provider=openai");
+        }
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
                 .defaultHeader("Authorization", "Bearer " + apiKey)
@@ -104,15 +108,21 @@ public class OpenAiClient implements LlmClient {
             JsonNode message = root.path("choices").get(0).path("message");
 
             if (message.has("tool_calls")) {
-                JsonNode toolCall = message.path("tool_calls").get(0);
-                return "{\"tool\":\"" + toolCall.path("function").path("name").asText()
-                        + "\",\"parameters\":" + toolCall.path("function").path("arguments").asText() + "}";
+                JsonNode function = message.path("tool_calls").get(0).path("function");
+                JsonNode arguments = MAPPER.readTree(function.path("arguments").asText("{}"));
+                return MAPPER.writeValueAsString(Map.of(
+                        "tool", function.path("name").asText(),
+                        "parameters", arguments
+                ));
             }
             return message.path("content").asText();
 
-        } catch (Exception e) {
-            log.warn("OpenAI tool call failed, retrying without tools: {}", e.getMessage());
+        } catch (org.springframework.web.client.RestClientException e) {
+            log.warn("OpenAI tool call failed (HTTP error), retrying without tools: {}", e.getMessage());
             return chat(systemPrompt, userMessage);
+        } catch (Exception e) {
+            log.error("OpenAI tool call failed", e);
+            throw new RuntimeException("OpenAI tool call failed: " + e.getMessage(), e);
         }
     }
 

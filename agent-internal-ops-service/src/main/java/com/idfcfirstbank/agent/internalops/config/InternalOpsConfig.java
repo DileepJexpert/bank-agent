@@ -1,6 +1,8 @@
 package com.idfcfirstbank.agent.internalops.config;
 
 import com.idfcfirstbank.agent.common.llm.LlmRouter;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
@@ -10,12 +12,14 @@ import java.time.Duration;
 
 @Slf4j
 @Configuration
+@RequiredArgsConstructor
 public class InternalOpsConfig {
 
-    @Bean
-    public String internalOpsLlmInfo(LlmRouter llmRouter) {
+    private final LlmRouter llmRouter;
+
+    @PostConstruct
+    void logLlmProvider() {
         log.info("Internal Ops Agent using LLM provider: {}", llmRouter.getActiveProvider());
-        return llmRouter.getActiveProvider();
     }
 
     @Bean

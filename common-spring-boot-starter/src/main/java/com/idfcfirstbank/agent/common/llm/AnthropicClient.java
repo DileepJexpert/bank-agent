@@ -103,16 +103,25 @@ public class AnthropicClient implements LlmClient {
 
             JsonNode root = MAPPER.readTree(response);
             JsonNode content = root.path("content");
-            StringBuilder result = new StringBuilder();
+
+            // Return the first tool_use block immediately so it is not mixed with text
             for (JsonNode block : content) {
-                if ("text".equals(block.path("type").asText())) {
-                    result.append(block.path("text").asText());
-                } else if ("tool_use".equals(block.path("type").asText())) {
-                    result.append("{\"tool\":\"").append(block.path("name").asText())
-                            .append("\",\"parameters\":").append(block.path("input").toString()).append("}");
+                if ("tool_use".equals(block.path("type").asText())) {
+                    return MAPPER.writeValueAsString(Map.of(
+                            "tool", block.path("name").asText(),
+                            "parameters", block.path("input")
+                    ));
                 }
             }
-            return result.toString();
+
+            // No tool call — accumulate text blocks
+            StringBuilder text = new StringBuilder();
+            for (JsonNode block : content) {
+                if ("text".equals(block.path("type").asText())) {
+                    text.append(block.path("text").asText());
+                }
+            }
+            return text.toString();
 
         } catch (RestClientException e) {
             log.warn("Anthropic tool call failed (HTTP error), retrying without tools: {}", e.getMessage());

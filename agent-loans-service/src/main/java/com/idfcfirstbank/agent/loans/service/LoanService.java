@@ -14,6 +14,8 @@ import com.idfcfirstbank.agent.common.llm.LlmRouter;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -82,8 +84,8 @@ public class LoanService {
         }
 
         if (decision.decision() == PolicyDecision.Decision.ESCALATE) {
-            log.info("Vault escalated loan query: customerId={}, intent={}, reason={}",
-                    request.customerId(), intent, decision.reason());
+            log.info("Vault escalated loan query: sessionId={}, intent={}, reason={}",
+                    request.sessionId(), intent, decision.reason());
             LoanResponse response = new LoanResponse(
                     request.sessionId(),
                     "Your request requires review by a specialist. Our team will contact you within 24 hours.",
@@ -343,11 +345,16 @@ public class LoanService {
         );
     }
 
+    /** Allow-listed parameter keys forwarded to the LLM — no raw customer IDs or account numbers. */
+    private static final List<String> ALLOWED_LOAN_PARAMS = List.of(
+            "loanType", "purpose", "repaymentPreference", "employmentType", "tenure"
+    );
+
     /**
      * Handle general loan queries using LlmRouter.
      */
     private LoanResponse handleGeneralQuery(LoanRequest request) {
-        String userPrompt = buildUserPrompt(request);
+        String userPrompt = buildAllowlistedPrompt(request);
 
         String response = llmRouter.chat(SYSTEM_PROMPT, userPrompt);
 
@@ -360,19 +367,32 @@ public class LoanService {
         );
     }
 
-    private String buildUserPrompt(LoanRequest request) {
+    /**
+     * Build an LLM prompt containing only allow-listed fields.
+     * Customer ID is intentionally excluded to minimise PII sent to external LLM.
+     */
+    private String buildAllowlistedPrompt(LoanRequest request) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("Customer ID: ").append(request.customerId()).append("\n");
         prompt.append("Customer message: ").append(request.message()).append("\n");
 
         if (request.intent() != null) {
             prompt.append("Detected intent: ").append(request.intent()).append("\n");
         }
+
+        // Only forward allow-listed parameters — no raw IDs, amounts, or PII
         if (request.parameters() != null && !request.parameters().isEmpty()) {
-            prompt.append("Extracted parameters: ").append(request.parameters()).append("\n");
+            Map<String, Object> safeParams = new LinkedHashMap<>();
+            for (String key : ALLOWED_LOAN_PARAMS) {
+                if (request.parameters().containsKey(key)) {
+                    safeParams.put(key, request.parameters().get(key));
+                }
+            }
+            if (!safeParams.isEmpty()) {
+                prompt.append("Context: ").append(safeParams).append("\n");
+            }
         }
 
-        prompt.append("\nPlease process this customer's loan-related request using the available tools. ");
+        prompt.append("\nPlease process this customer's loan-related request. ");
         prompt.append("Provide a clear, friendly response with the relevant information. ");
         prompt.append("Format all currency amounts in INR.");
 

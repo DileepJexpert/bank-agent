@@ -18,6 +18,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import com.idfcfirstbank.agent.common.llm.LlmRouter;
 
@@ -47,8 +48,8 @@ class WealthServiceTest {
     @Mock
     private AuditEventPublisher auditEventPublisher;
 
-    @Mock
-    private ObjectMapper objectMapper;
+    @Spy
+    private ObjectMapper objectMapper = new ObjectMapper();
 
     @Captor
     private ArgumentCaptor<AuditEvent> auditEventCaptor;

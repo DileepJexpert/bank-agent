@@ -164,7 +164,7 @@ public class IntentDetectionService {
             }
 
             int tier = confidence >= 0.8 ? 1 : 2;
-            log.info("LLM intent: {} confidence={} tier={} params={}", intent, confidence, tier, parameters);
+            log.debug("LLM intent: {} confidence={} tier={} params={}", intent, confidence, tier, parameters);
             intents.add(new DetectedIntent(intent, confidence, tier, parameters));
         }
 

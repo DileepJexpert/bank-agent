@@ -49,7 +49,7 @@ public class CollectionsService {
     private static final String CONTACT_COUNT_KEY_PREFIX = "collections:contact_count:";
     private static final Duration CONTACT_COUNT_TTL = Duration.ofDays(7);
 
-    private static final String SYSTEM_PROMPT = """
+    private static final String SYSTEM_PROMPT_BASE = """
             You are the Collections Agent for IDFC First Bank. You handle loan collection
             and recovery operations with empathy and professionalism, always complying with
             RBI guidelines for debt collection.
@@ -61,15 +61,19 @@ public class CollectionsService {
             - Explain overdue consequences and available remedies
 
             MANDATORY RULES:
-            1. Every outbound call MUST begin with: "This is IDFC First Bank AI assistant. This call is recorded per RBI guidelines."
-            2. Never use threatening or abusive language. Be firm but empathetic.
-            3. Respect RBI-mandated contact frequency limits (max 3 contacts per week per customer).
-            4. Do not contact customers outside permitted hours (9 AM to 6 PM, Monday to Saturday).
-            5. Always present the overdue amount, applicable charges, and available resolution options.
-            6. Settlement discount percentages are governed by vault policy - do not promise specific discounts.
-            7. Format all currency amounts in INR with proper formatting.
-            8. If the customer disputes the debt or requests escalation, comply immediately.
+            1. Never use threatening or abusive language. Be firm but empathetic.
+            2. Respect RBI-mandated contact frequency limits (max 3 contacts per week per customer).
+            3. Do not contact customers outside permitted hours (9 AM to 6 PM, Monday to Saturday).
+            4. Always present the overdue amount, applicable charges, and available resolution options.
+            5. Settlement discount percentages are governed by vault policy - do not promise specific discounts.
+            6. Format all currency amounts in INR with proper formatting.
+            7. If the customer disputes the debt or requests escalation, comply immediately.
             """;
+
+    /** RBI-mandated opening disclosure required only on voice/telephony channels. */
+    private static final String VOICE_OPENING_RULE =
+            "MANDATORY FOR THIS CHANNEL: Begin your response with: " +
+            "\"This is IDFC First Bank AI assistant. This call is recorded per RBI guidelines.\"\n\n";
 
     private final LlmRouter llmRouter;
     private final VaultClient vaultClient;
@@ -123,7 +127,7 @@ public class CollectionsService {
         try {
             String userPrompt = buildPaymentPlanPrompt(request);
 
-            String llmResponse = llmRouter.chat(SYSTEM_PROMPT, userPrompt);
+            String llmResponse = llmRouter.chat(buildSystemPrompt(request), userPrompt);
 
             // Record the interaction
             CollectionsInteraction interaction = CollectionsInteraction.builder()
@@ -226,7 +230,7 @@ public class CollectionsService {
 
             String userPrompt = buildSettlementPrompt(request, requestedDiscountPct, settlementAmount);
 
-            String llmResponse = llmRouter.chat(SYSTEM_PROMPT, userPrompt);
+            String llmResponse = llmRouter.chat(buildSystemPrompt(request), userPrompt);
 
             // Record the interaction
             CollectionsInteraction interaction = CollectionsInteraction.builder()
@@ -350,7 +354,7 @@ public class CollectionsService {
                     request.overdueAmount() != null ? request.overdueAmount().toPlainString() : "N/A",
                     request.message() != null ? request.message() : "");
 
-            String llmResponse = llmRouter.chat(SYSTEM_PROMPT, userPrompt);
+            String llmResponse = llmRouter.chat(buildSystemPrompt(request), userPrompt);
 
             CollectionsResponse response = new CollectionsResponse(
                     request.sessionId(),
@@ -381,6 +385,18 @@ public class CollectionsService {
     }
 
     // ── Helper methods ──
+
+    /**
+     * Build the system prompt, adding the RBI call-opening disclosure rule only for
+     * voice/telephony channels (not for web or chat).
+     */
+    private String buildSystemPrompt(CollectionsRequest request) {
+        String channel = request.parameters() != null
+                ? String.valueOf(request.parameters().getOrDefault("channel", ""))
+                : "";
+        boolean isVoice = "voice".equalsIgnoreCase(channel) || "telephony".equalsIgnoreCase(channel);
+        return isVoice ? VOICE_OPENING_RULE + SYSTEM_PROMPT_BASE : SYSTEM_PROMPT_BASE;
+    }
 
     private PolicyDecision evaluatePolicy(String customerId, String action, CollectionsRequest request) {
         Map<String, Object> context = new HashMap<>();
