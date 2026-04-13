@@ -11,7 +11,7 @@ import com.idfcfirstbank.agent.wealth.tools.WealthTools;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
+import com.idfcfirstbank.agent.common.llm.LlmRouter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -29,7 +29,7 @@ import java.util.UUID;
  * <ul>
  *   <li>PORTFOLIO_SUMMARY (Tier 1): Fetch MF holdings, FDs, insurance from MCP servers</li>
  *   <li>SIP_MANAGEMENT (Tier 1): Create/modify/cancel SIP via investment MCP</li>
- *   <li>INVESTMENT_QUERY (Tier 2 - LLM): Use ChatClient with SEBI disclaimer</li>
+ *   <li>INVESTMENT_QUERY (Tier 2 - LLM): Use LlmRouter with SEBI disclaimer</li>
  *   <li>INSURANCE_STATUS (Tier 0): Fetch policy status, premium due date</li>
  * </ul>
  * <p>
@@ -48,9 +48,25 @@ public class WealthService {
             "Mutual fund investments are subject to market risks. Read all scheme related documents carefully. "
                     + "Past performance is not indicative of future returns.";
 
+    private static final String SYSTEM_PROMPT = """
+            You are the Wealth Management Agent for IDFC First Bank. You handle wealth-related
+            queries including portfolio summaries, mutual fund investments, SIP management,
+            fixed deposits, insurance policies, and investment advisory.
+
+            CRITICAL REGULATORY REQUIREMENT:
+            You MUST include the following SEBI disclaimer before ANY investment recommendation
+            or mutual fund related information:
+            "Mutual fund investments are subject to market risks. Read all scheme related documents
+            carefully. Past performance is not indicative of future returns."
+
+            Always verify the customer's risk profile before providing investment suggestions.
+            Be precise with financial figures and format currency amounts in INR.
+            Never provide guaranteed return projections.
+            """;
+
     private static final String AGENT_ID = "wealth-agent";
 
-    private final ChatClient chatClient;
+    private final LlmRouter llmRouter;
     private final VaultClient vaultClient;
     private final WealthTools wealthTools;
     private final AuditEventPublisher auditEventPublisher;
@@ -203,7 +219,7 @@ public class WealthService {
     }
 
     /**
-     * Tier 2 (LLM): Investment query. Uses ChatClient with function calling.
+     * Tier 2 (LLM): Investment query. Uses LlmRouter.
      * MUST include SEBI disclaimer. Checks risk profile before providing advice.
      */
     public WealthResponse handleInvestmentQuery(WealthRequest request) {
@@ -215,19 +231,7 @@ public class WealthService {
         try {
             String userPrompt = buildInvestmentPrompt(request, riskProfile);
 
-            String llmResponse = chatClient.prompt()
-                    .user(userPrompt)
-                    .functions(
-                            "getPortfolio",
-                            "getSipDetails",
-                            "createSip",
-                            "modifySip",
-                            "cancelSip",
-                            "getInsuranceStatus",
-                            "getRiskProfile"
-                    )
-                    .call()
-                    .content();
+            String llmResponse = llmRouter.chat(SYSTEM_PROMPT, userPrompt);
 
             // Ensure SEBI disclaimer is always present in response
             String fullResponse = SEBI_DISCLAIMER + "\n\n" + llmResponse;

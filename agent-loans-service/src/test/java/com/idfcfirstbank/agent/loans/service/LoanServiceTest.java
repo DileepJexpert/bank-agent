@@ -11,7 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.client.ChatClient;
+import com.idfcfirstbank.agent.common.llm.LlmRouter;
 
 import java.util.Map;
 
@@ -23,7 +23,7 @@ import static org.mockito.Mockito.when;
 class LoanServiceTest {
 
     @Mock
-    private ChatClient chatClient;
+    private LlmRouter llmRouter;
 
     @Mock
     private VaultClient vaultClient;

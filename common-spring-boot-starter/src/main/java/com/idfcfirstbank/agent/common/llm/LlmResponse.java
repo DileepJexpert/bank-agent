@@ -16,7 +16,7 @@ public record LlmResponse(
     public record ToolCall(String name, String arguments) {}
 
     /** Convenience factory for plain text responses. */
-    public static LlmResponse of(String content, String provider, String model) {
+    public static LlmResponse of(String content, String model, String provider) {
         return new LlmResponse(content, model, provider, 0, 0, List.of());
     }
 }

@@ -10,7 +10,7 @@ import com.idfcfirstbank.agent.common.vault.PolicyDecision;
 import com.idfcfirstbank.agent.common.vault.VaultClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
+import com.idfcfirstbank.agent.common.llm.LlmRouter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -49,7 +49,29 @@ public class CollectionsService {
     private static final String CONTACT_COUNT_KEY_PREFIX = "collections:contact_count:";
     private static final Duration CONTACT_COUNT_TTL = Duration.ofDays(7);
 
-    private final ChatClient chatClient;
+    private static final String SYSTEM_PROMPT = """
+            You are the Collections Agent for IDFC First Bank. You handle loan collection
+            and recovery operations with empathy and professionalism, always complying with
+            RBI guidelines for debt collection.
+
+            Your capabilities:
+            - Negotiate restructured EMI payment plans for overdue accounts
+            - Calculate and present settlement offers with applicable discounts
+            - Guide customers through immediate payment options
+            - Explain overdue consequences and available remedies
+
+            MANDATORY RULES:
+            1. Every outbound call MUST begin with: "This is IDFC First Bank AI assistant. This call is recorded per RBI guidelines."
+            2. Never use threatening or abusive language. Be firm but empathetic.
+            3. Respect RBI-mandated contact frequency limits (max 3 contacts per week per customer).
+            4. Do not contact customers outside permitted hours (9 AM to 6 PM, Monday to Saturday).
+            5. Always present the overdue amount, applicable charges, and available resolution options.
+            6. Settlement discount percentages are governed by vault policy - do not promise specific discounts.
+            7. Format all currency amounts in INR with proper formatting.
+            8. If the customer disputes the debt or requests escalation, comply immediately.
+            """;
+
+    private final LlmRouter llmRouter;
     private final VaultClient vaultClient;
     private final AuditEventPublisher auditEventPublisher;
     private final CollectionsInteractionRepository interactionRepository;
@@ -76,7 +98,7 @@ public class CollectionsService {
     }
 
     /**
-     * Tier 2: Negotiate a restructured EMI payment plan using ChatClient.
+     * Tier 2: Negotiate a restructured EMI payment plan using LlmRouter.
      */
     public CollectionsResponse handlePaymentPlan(CollectionsRequest request) {
         long startTime = System.currentTimeMillis();
@@ -101,10 +123,7 @@ public class CollectionsService {
         try {
             String userPrompt = buildPaymentPlanPrompt(request);
 
-            String llmResponse = chatClient.prompt()
-                    .user(userPrompt)
-                    .call()
-                    .content();
+            String llmResponse = llmRouter.chat(SYSTEM_PROMPT, userPrompt);
 
             // Record the interaction
             CollectionsInteraction interaction = CollectionsInteraction.builder()
@@ -207,10 +226,7 @@ public class CollectionsService {
 
             String userPrompt = buildSettlementPrompt(request, requestedDiscountPct, settlementAmount);
 
-            String llmResponse = chatClient.prompt()
-                    .user(userPrompt)
-                    .call()
-                    .content();
+            String llmResponse = llmRouter.chat(SYSTEM_PROMPT, userPrompt);
 
             // Record the interaction
             CollectionsInteraction interaction = CollectionsInteraction.builder()
@@ -334,10 +350,7 @@ public class CollectionsService {
                     request.overdueAmount() != null ? request.overdueAmount().toPlainString() : "N/A",
                     request.message() != null ? request.message() : "");
 
-            String llmResponse = chatClient.prompt()
-                    .user(userPrompt)
-                    .call()
-                    .content();
+            String llmResponse = llmRouter.chat(SYSTEM_PROMPT, userPrompt);
 
             CollectionsResponse response = new CollectionsResponse(
                     request.sessionId(),

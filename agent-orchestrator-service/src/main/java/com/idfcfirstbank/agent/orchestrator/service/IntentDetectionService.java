@@ -51,6 +51,7 @@ public class IntentDetectionService {
             - CARD_BLOCK: Customer wants to block a card
             - CARD_ACTIVATE: Customer wants to activate a card
             - CARD_LIMIT: Customer wants to change card limit
+            - EMI_CONVERT: Customer wants to convert a transaction to EMI
             - REWARD_POINTS: Customer wants to check or redeem reward points
             - DISPUTE_RAISE: Customer wants to raise a transaction dispute
             - LOAN_ELIGIBILITY: Customer wants to check loan eligibility

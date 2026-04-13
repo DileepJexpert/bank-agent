@@ -58,7 +58,7 @@ public class ChatController {
             TierRouter tierRouter,
             LanguageDetectionService languageDetectionService,
             @Value("${ai.enabled:false}") boolean aiEnabled,
-            @Value("${spring.ai.ollama.chat.model:llama3.1}") String aiModelName,
+            @Value("${llm.ollama.model:llama3.1}") String aiModelName,
             // Optional AI beans - only present when ai.enabled=true
             @org.springframework.lang.Nullable AiIntentDetector aiIntentDetector,
             @org.springframework.lang.Nullable AiResponseGenerator aiResponseGenerator,

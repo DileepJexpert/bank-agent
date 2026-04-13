@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import java.util.List;
 import java.util.Map;
@@ -29,6 +30,10 @@ public class AnthropicClient implements LlmClient {
     public AnthropicClient(
             @Value("${llm.anthropic.api-key:}") String apiKey,
             @Value("${llm.anthropic.model:claude-sonnet-4-20250514}") String model) {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException(
+                    "llm.anthropic.api-key must be set when llm.provider=anthropic");
+        }
         this.restClient = RestClient.builder()
                 .baseUrl("https://api.anthropic.com")
                 .defaultHeader("x-api-key", apiKey)
@@ -56,16 +61,24 @@ public class AnthropicClient implements LlmClient {
                     .body(String.class);
 
             JsonNode root = MAPPER.readTree(response);
-            return root.path("content").get(0).path("text").asText();
+            JsonNode contentArray = root.path("content");
+            if (!contentArray.isArray() || contentArray.isEmpty()) {
+                log.warn("Anthropic returned empty content array");
+                return "";
+            }
+            return contentArray.get(0).path("text").asText();
 
         } catch (Exception e) {
-            log.error("Anthropic chat failed: {}", e.getMessage());
+            log.error("Anthropic chat failed", e);
             throw new RuntimeException("Anthropic call failed: " + e.getMessage(), e);
         }
     }
 
     @Override
     public String chat(String systemPrompt, String userMessage, List<ToolDefinition> tools) {
+        if (tools == null || tools.isEmpty()) {
+            return chat(systemPrompt, userMessage);
+        }
         try {
             List<Map<String, Object>> toolDefs = tools.stream()
                     .map(t -> Map.<String, Object>of(
@@ -101,9 +114,12 @@ public class AnthropicClient implements LlmClient {
             }
             return result.toString();
 
-        } catch (Exception e) {
-            log.warn("Anthropic tool call failed, retrying without tools: {}", e.getMessage());
+        } catch (RestClientException e) {
+            log.warn("Anthropic tool call failed (HTTP error), retrying without tools: {}", e.getMessage());
             return chat(systemPrompt, userMessage);
+        } catch (Exception e) {
+            log.error("Anthropic tool call failed", e);
+            throw new RuntimeException("Anthropic tool call failed: " + e.getMessage(), e);
         }
     }
 

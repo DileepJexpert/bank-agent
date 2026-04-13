@@ -2,16 +2,16 @@ package com.idfcfirstbank.agent.orchestrator.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.idfcfirstbank.agent.common.llm.LlmRouter;
 import com.idfcfirstbank.agent.orchestrator.model.DetectedIntent;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 
 /**
- * LLM-based intent detector using Ollama (Llama 3.1) via Spring AI.
+ * LLM-based intent detector using LlmRouter.
  * <p>
  * Activated when {@code ai.enabled=true}. Extracts intent, entities,
  * language, and tier from customer messages in Hindi, English, or Hinglish.
@@ -23,8 +23,31 @@ import java.util.*;
 @ConditionalOnProperty(name = "ai.enabled", havingValue = "true")
 public class AiIntentDetector {
 
-    private final ChatClient chatClient;
-    private final ObjectMapper objectMapper;
+    private static final String SYSTEM_PROMPT = """
+            You are an intent detector for IDFC First Bank.
+            Customer messages may be in Hindi, English, or Hinglish.
+
+            Extract intent and entities from the message.
+            Respond ONLY with valid JSON, no markdown, no explanation:
+            {
+              "intents": ["BALANCE_CHECK"],
+              "entities": {"amount": null, "tenure": null},
+              "language": "hi",
+              "confidence": 0.95
+            }
+
+            Valid intents: BALANCE_CHECK, BALANCE_INQUIRY, MINI_STATEMENT, CARD_BLOCK,
+            CARD_ACTIVATE, CARD_LIMIT, EMI_CONVERT, LOAN_ELIGIBILITY, LOAN_EMI_QUERY,
+            LOAN_PREPAYMENT, LOAN_APPLICATION, CREATE_FD, FD_CREATION, TRANSFER_MONEY,
+            FUND_TRANSFER, REWARD_POINTS, COMPLAINT, HUMAN_ESCALATION, GENERAL_INQUIRY,
+            ACCOUNT_DETAILS, CHEQUE_STATUS, CHEQUE_BOOK_REQUEST, DISPUTE_RAISE
+
+            Rules:
+            - Return the most specific intent possible
+            - If multiple intents are present, list all of them
+            - confidence must be between 0.0 and 1.0
+            - language should be: en, hi, hi-en, ta, te, bn, mr, gu
+            """;
 
     /** Maps intents to their tier level. */
     private static final Map<String, Integer> INTENT_TIER_MAP = Map.ofEntries(
@@ -37,6 +60,7 @@ public class AiIntentDetector {
             Map.entry("REWARD_POINTS", 1),
             Map.entry("CARD_ACTIVATE", 1),
             Map.entry("CARD_LIMIT", 1),
+            Map.entry("EMI_CONVERT", 1),
             Map.entry("LOAN_ELIGIBILITY", 2),
             Map.entry("TRANSFER_MONEY", 2),
             Map.entry("FUND_TRANSFER", 2),
@@ -52,33 +76,12 @@ public class AiIntentDetector {
             Map.entry("GENERAL_INQUIRY", 1)
     );
 
-    public AiIntentDetector(ChatClient.Builder builder, ObjectMapper objectMapper) {
+    private final LlmRouter llmRouter;
+    private final ObjectMapper objectMapper;
+
+    public AiIntentDetector(LlmRouter llmRouter, ObjectMapper objectMapper) {
+        this.llmRouter = llmRouter;
         this.objectMapper = objectMapper;
-        this.chatClient = builder.defaultSystem("""
-                You are an intent detector for IDFC First Bank.
-                Customer messages may be in Hindi, English, or Hinglish.
-
-                Extract intent and entities from the message.
-                Respond ONLY with valid JSON, no markdown, no explanation:
-                {
-                  "intents": ["BALANCE_CHECK"],
-                  "entities": {"amount": null, "tenure": null},
-                  "language": "hi",
-                  "confidence": 0.95
-                }
-
-                Valid intents: BALANCE_CHECK, BALANCE_INQUIRY, MINI_STATEMENT, CARD_BLOCK,
-                CARD_ACTIVATE, CARD_LIMIT, LOAN_ELIGIBILITY, LOAN_EMI_QUERY, LOAN_PREPAYMENT,
-                LOAN_APPLICATION, CREATE_FD, FD_CREATION, TRANSFER_MONEY, FUND_TRANSFER,
-                REWARD_POINTS, COMPLAINT, HUMAN_ESCALATION, GENERAL_INQUIRY,
-                ACCOUNT_DETAILS, CHEQUE_STATUS, CHEQUE_BOOK_REQUEST, DISPUTE_RAISE
-
-                Rules:
-                - Return the most specific intent possible
-                - If multiple intents are present, list all of them
-                - confidence must be between 0.0 and 1.0
-                - language should be: en, hi, hi-en, ta, te, bn, mr, gu
-                """).build();
     }
 
     /**
@@ -91,11 +94,7 @@ public class AiIntentDetector {
         log.debug("AI intent detection for message: {}", message);
 
         try {
-            String response = chatClient.prompt()
-                    .user(message)
-                    .call()
-                    .content();
-
+            String response = llmRouter.chat(SYSTEM_PROMPT, message);
             log.debug("AI intent detector raw response: {}", response);
             return parseResponse(response);
 
