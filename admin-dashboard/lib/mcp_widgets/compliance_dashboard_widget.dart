@@ -287,18 +287,16 @@ class _ComplianceDashboardWidgetState extends State<ComplianceDashboardWidget> {
                   maxY: maxCount * 1.2,
                   barTouchData: BarTouchData(
                     touchTooltipData: BarTouchTooltipData(
-                      getTooltipItems: (group, groupIndex, rod, rodIndex) {
+                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
                         final entry = trend[group.x.toInt()];
-                        return [
-                          BarTooltipItem(
-                            '${entry['date']}\n${rod.toY.toInt()} violations',
-                            const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
+                        return BarTooltipItem(
+                          '${entry['date']}\n${rod.toY.toInt()} violations',
+                          const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
                           ),
-                        ];
+                        );
                       },
                     ),
                   ),
