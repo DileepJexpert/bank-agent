@@ -62,7 +62,11 @@ public class AzureOpenAiClient implements LlmClient {
                     .body(String.class);
 
             JsonNode root = MAPPER.readTree(response);
-            return root.path("choices").get(0).path("message").path("content").asText();
+            JsonNode content = root.path("choices").path(0).path("message").path("content");
+            if (content.isMissingNode() || content.asText().isBlank()) {
+                throw new IllegalStateException("Azure OpenAI returned no completion content: " + response);
+            }
+            return content.asText();
 
         } catch (Exception e) {
             log.error("Azure OpenAI chat failed: {}", e.getMessage());
@@ -72,8 +76,12 @@ public class AzureOpenAiClient implements LlmClient {
 
     @Override
     public String chat(String systemPrompt, String userMessage, List<ToolDefinition> tools) {
-        // Azure uses same format as OpenAI — delegate to plain chat for now
-        return chat(systemPrompt, userMessage);
+        if (tools == null || tools.isEmpty()) {
+            return chat(systemPrompt, userMessage);
+        }
+        throw new UnsupportedOperationException(
+                "AzureOpenAiClient does not support tool-calling yet. "
+                + "Use llm.provider=openai for tool-calling support.");
     }
 
     @Override

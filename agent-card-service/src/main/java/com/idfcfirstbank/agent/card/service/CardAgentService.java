@@ -18,9 +18,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -48,6 +50,12 @@ public class CardAgentService {
             - Format currency amounts in INR with proper formatting.
             """;
 
+    /** Allow-listed context keys forwarded to the LLM — no raw IDs or PII beyond these. */
+    private static final List<String> ALLOWED_CONTEXT_KEYS = List.of(
+            "cardLast4", "transactionAmount", "merchantName", "intent",
+            "tenure", "limitAmount", "cardType"
+    );
+
     private final LlmRouter llmRouter;
     private final VaultClient vaultClient;
     private final RestTemplate restTemplate;
@@ -64,7 +72,7 @@ public class CardAgentService {
 
         PolicyDecision decision = evaluateVaultPolicy(request.customerId(), intent, request.sessionId());
         if (decision.decision() == PolicyDecision.Decision.DENY) {
-            log.warn("Vault denied card op: customerId={}, intent={}", request.customerId(), intent);
+            log.warn("Vault denied card op: sessionId={}, intent={}", request.sessionId(), intent);
             return CardAgentResponse.denied(request.sessionId(), decision.reason(), intent);
         }
         if (decision.decision() == PolicyDecision.Decision.ESCALATE) {
@@ -103,7 +111,7 @@ public class CardAgentService {
                             String.valueOf(result.getOrDefault("blockReference", "N/A"))),
                     mcpCallsMade, "TIER_1");
         } catch (Exception e) {
-            log.error("Card block failed: customerId={}, cardLast4=****{}", customerId, cardLast4, e);
+            log.error("Card block failed: cardLast4=****{}", cardLast4, e);
             return new CardAgentResponse(null,
                     "We encountered an issue blocking your card. Please call our 24x7 helpline immediately.",
                     Map.of("cardLast4", cardLast4), mcpCallsMade, "TIER_1");
@@ -113,15 +121,18 @@ public class CardAgentService {
     /** Direct reward points — Tier 0, no LLM. */
     public RewardPointsResponse getRewardPointsDirect(String customerId) {
         try {
-            Map<String, Object> result = callMcpTool(
-                    "/tools/getRewardPoints?customerId=" + customerId, null);
+            String toolPath = UriComponentsBuilder.fromPath("/tools/getRewardPoints")
+                    .queryParam("customerId", customerId)
+                    .build()
+                    .toUriString();
+            Map<String, Object> result = callMcpTool(toolPath, null);
             return new RewardPointsResponse(
                     ((Number) result.getOrDefault("totalPoints", 0)).longValue(),
                     new BigDecimal(String.valueOf(result.getOrDefault("valueInRupees", "0"))),
                     String.valueOf(result.getOrDefault("expiryDate", "N/A"))
             );
         } catch (Exception e) {
-            log.error("Reward points fetch failed: customerId={}", customerId, e);
+            log.error("Reward points fetch failed for session", e);
             return new RewardPointsResponse(0L, BigDecimal.ZERO, "N/A");
         }
     }
@@ -149,7 +160,7 @@ public class CardAgentService {
                             "status", String.valueOf(result.getOrDefault("status", "N/A"))),
                     mcpCallsMade, "TIER_2");
         } catch (Exception e) {
-            log.error("Dispute raise failed: customerId={}", request.customerId(), e);
+            log.error("Dispute raise failed", e);
             return new CardAgentResponse(null,
                     "Unable to raise dispute. Please try again or contact support.",
                     Map.of(), mcpCallsMade, "TIER_2");
@@ -160,6 +171,12 @@ public class CardAgentService {
 
     private CardAgentResponse processCardBlock(CardAgentRequest request, List<String> mcpCallsMade) {
         String cardLast4 = extractCardLast4(request);
+        if (cardLast4.isBlank()) {
+            log.warn("Card block requested but cardLast4 not provided: sessionId={}", request.sessionId());
+            return new CardAgentResponse(request.sessionId(),
+                    "Please specify which card you'd like to block (provide the last 4 digits).",
+                    Map.of(), mcpCallsMade, "TIER_1");
+        }
         return blockCardDirect(request.customerId(), cardLast4,
                 request.message() != null ? request.message() : "CUSTOMER_REQUEST");
     }
@@ -168,8 +185,11 @@ public class CardAgentService {
 
     private CardAgentResponse processRewardPoints(CardAgentRequest request, List<String> mcpCallsMade) {
         try {
-            Map<String, Object> result = callMcpTool(
-                    "/tools/getRewardPoints?customerId=" + request.customerId(), null);
+            String toolPath = UriComponentsBuilder.fromPath("/tools/getRewardPoints")
+                    .queryParam("customerId", request.customerId())
+                    .build()
+                    .toUriString();
+            Map<String, Object> result = callMcpTool(toolPath, null);
             mcpCallsMade.add("getRewardPoints");
             return new CardAgentResponse(request.sessionId(),
                     String.format("You have %s reward points valued at INR %s.%s",
@@ -181,7 +201,7 @@ public class CardAgentService {
                             "valueInRupees", String.valueOf(result.getOrDefault("valueInRupees", "0"))),
                     mcpCallsMade, "TIER_0");
         } catch (Exception e) {
-            log.error("Reward points failed: customerId={}", request.customerId(), e);
+            log.error("Reward points failed: sessionId={}", request.sessionId(), e);
             return new CardAgentResponse(request.sessionId(),
                     "Unable to retrieve reward points. Please try again later.",
                     Map.of(), mcpCallsMade, "TIER_0");
@@ -192,7 +212,7 @@ public class CardAgentService {
 
     private CardAgentResponse processDisputeRaise(CardAgentRequest request, List<String> mcpCallsMade) {
         try {
-            String llmResponse = llmRouter.chat(SYSTEM_PROMPT, buildUserPrompt(request));
+            String llmResponse = llmRouter.chat(SYSTEM_PROMPT, buildAllowlistedPrompt(request));
 
             if (request.customerContext() != null && request.customerContext().containsKey("transactionId")) {
                 Map<String, Object> result = callMcpTool("/tools/raiseDispute", Map.of(
@@ -211,7 +231,7 @@ public class CardAgentService {
             return new CardAgentResponse(request.sessionId(),
                     MaskingUtils.maskCardNumber(llmResponse), Map.of(), mcpCallsMade, "TIER_2");
         } catch (Exception e) {
-            log.error("Dispute processing error: customerId={}", request.customerId(), e);
+            log.error("Dispute processing error: sessionId={}", request.sessionId(), e);
             return new CardAgentResponse(request.sessionId(),
                     "Unable to process dispute. Please try again.", Map.of(), mcpCallsMade, "TIER_2");
         }
@@ -221,6 +241,12 @@ public class CardAgentService {
 
     private CardAgentResponse processCardActivate(CardAgentRequest request, List<String> mcpCallsMade) {
         String cardLast4 = extractCardLast4(request);
+        if (cardLast4.isBlank()) {
+            log.warn("Card activate requested but cardLast4 not provided: sessionId={}", request.sessionId());
+            return new CardAgentResponse(request.sessionId(),
+                    "Please specify which card you'd like to activate (provide the last 4 digits).",
+                    Map.of(), mcpCallsMade, "TIER_1");
+        }
         try {
             Map<String, Object> result = callMcpTool("/tools/activateCard",
                     Map.of("customerId", request.customerId(), "cardLast4", cardLast4));
@@ -232,7 +258,7 @@ public class CardAgentService {
                             String.valueOf(result.getOrDefault("status", "ACTIVATED"))),
                     mcpCallsMade, "TIER_1");
         } catch (Exception e) {
-            log.error("Card activate failed: customerId={}", request.customerId(), e);
+            log.error("Card activate failed: sessionId={}", request.sessionId(), e);
             return new CardAgentResponse(request.sessionId(),
                     "Unable to activate card. Please try again or visit a branch.",
                     Map.of("cardLast4", cardLast4), mcpCallsMade, "TIER_1");
@@ -243,7 +269,7 @@ public class CardAgentService {
 
     private CardAgentResponse processEmiConvert(CardAgentRequest request, List<String> mcpCallsMade) {
         try {
-            String llmResponse = llmRouter.chat(SYSTEM_PROMPT, buildUserPrompt(request));
+            String llmResponse = llmRouter.chat(SYSTEM_PROMPT, buildAllowlistedPrompt(request));
 
             if (request.customerContext() != null && request.customerContext().containsKey("transactionId")) {
                 Map<String, Object> result = callMcpTool("/tools/convertToEMI", Map.of(
@@ -266,7 +292,7 @@ public class CardAgentService {
             return new CardAgentResponse(request.sessionId(),
                     MaskingUtils.maskCardNumber(llmResponse), Map.of(), mcpCallsMade, "TIER_2");
         } catch (Exception e) {
-            log.error("EMI conversion error: customerId={}", request.customerId(), e);
+            log.error("EMI conversion error: sessionId={}", request.sessionId(), e);
             return new CardAgentResponse(request.sessionId(),
                     "Unable to process EMI conversion. Please try again.",
                     Map.of(), mcpCallsMade, "TIER_2");
@@ -277,11 +303,11 @@ public class CardAgentService {
 
     private CardAgentResponse processGeneral(CardAgentRequest request, List<String> mcpCallsMade) {
         try {
-            String response = llmRouter.chat(SYSTEM_PROMPT, buildUserPrompt(request));
+            String response = llmRouter.chat(SYSTEM_PROMPT, buildAllowlistedPrompt(request));
             return new CardAgentResponse(request.sessionId(),
                     MaskingUtils.maskCardNumber(response), Map.of(), mcpCallsMade, "GENERAL");
         } catch (Exception e) {
-            log.error("General card query error: customerId={}", request.customerId(), e);
+            log.error("General card query error: sessionId={}", request.sessionId(), e);
             return new CardAgentResponse(request.sessionId(),
                     "Unable to process request. Please try again.",
                     Map.of(), mcpCallsMade, "GENERAL");
@@ -325,7 +351,7 @@ public class CardAgentService {
                             "template", "CARD_BLOCKED", "parameters", Map.of("cardLast4", cardLast4)),
                     Map.class);
         } catch (Exception e) {
-            log.warn("Block notification failed for customerId={}: {}", customerId, e.getMessage());
+            log.warn("Block notification failed: {}", e.getMessage());
         }
     }
 
@@ -336,20 +362,40 @@ public class CardAgentService {
         return "";
     }
 
-    private String buildUserPrompt(CardAgentRequest request) {
+    /**
+     * Build a prompt that contains only allow-listed fields from customerContext,
+     * preventing raw transaction IDs and other identifiers from being forwarded to the LLM.
+     */
+    private String buildAllowlistedPrompt(CardAgentRequest request) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("Customer ID: ").append(request.customerId()).append("\n");
         prompt.append("Customer message: ").append(request.message()).append("\n");
         if (request.intent() != null) prompt.append("Intent: ").append(request.intent()).append("\n");
         if (request.language() != null) prompt.append("Language: ").append(request.language()).append("\n");
-        if (request.conversationHistory() != null && !request.conversationHistory().isEmpty()) {
-            prompt.append("History:\n");
-            request.conversationHistory().forEach(e -> prompt.append("  - ").append(e).append("\n"));
-        }
+
+        // Only include allow-listed context keys — no raw IDs or PII beyond card last-4
         if (request.customerContext() != null && !request.customerContext().isEmpty()) {
-            prompt.append("Context: ")
-                    .append(MaskingUtils.maskCardNumber(request.customerContext().toString())).append("\n");
+            Map<String, String> safeContext = new LinkedHashMap<>();
+            for (String key : ALLOWED_CONTEXT_KEYS) {
+                if (request.customerContext().containsKey(key)) {
+                    String val = request.customerContext().get(key);
+                    safeContext.put(key, "cardLast4".equals(key)
+                            ? MaskingUtils.maskCardNumber(val) : val);
+                }
+            }
+            if (!safeContext.isEmpty()) {
+                prompt.append("Context: ").append(safeContext).append("\n");
+            }
         }
+
+        // Include up to last 3 turns of conversation history (no raw IDs)
+        if (request.conversationHistory() != null && !request.conversationHistory().isEmpty()) {
+            List<String> history = request.conversationHistory();
+            int start = Math.max(0, history.size() - 3);
+            prompt.append("Recent conversation:\n");
+            history.subList(start, history.size())
+                   .forEach(e -> prompt.append("  - ").append(e).append("\n"));
+        }
+
         prompt.append("\nProcess this card request. NEVER include full card numbers in responses.");
         return prompt.toString();
     }
