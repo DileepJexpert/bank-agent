@@ -15,6 +15,7 @@ import com.idfcfirstbank.agent.orchestrator.service.IntentDetectionService;
 import com.idfcfirstbank.agent.orchestrator.service.LanguageDetectionService;
 import com.idfcfirstbank.agent.orchestrator.service.RoutingService;
 import com.idfcfirstbank.agent.orchestrator.service.SessionService;
+import com.idfcfirstbank.agent.common.llm.LlmRouter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -49,7 +50,7 @@ public class ChatController {
     private final AiResponseGenerator aiResponseGenerator;
     private final AiToolSelector aiToolSelector;
     private final boolean aiEnabled;
-    private final String aiModelName;
+    private final LlmRouter llmRouter;
 
     public ChatController(
             IntentDetectionService intentDetectionService,
@@ -57,8 +58,8 @@ public class ChatController {
             SessionService sessionService,
             TierRouter tierRouter,
             LanguageDetectionService languageDetectionService,
+            LlmRouter llmRouter,
             @Value("${ai.enabled:false}") boolean aiEnabled,
-            @Value("${spring.ai.ollama.chat.model:llama3.1}") String aiModelName,
             // Optional AI beans - only present when ai.enabled=true
             @org.springframework.lang.Nullable AiIntentDetector aiIntentDetector,
             @org.springframework.lang.Nullable AiResponseGenerator aiResponseGenerator,
@@ -68,14 +69,14 @@ public class ChatController {
         this.sessionService = sessionService;
         this.tierRouter = tierRouter;
         this.languageDetectionService = languageDetectionService;
+        this.llmRouter = llmRouter;
         this.aiEnabled = aiEnabled;
-        this.aiModelName = aiModelName;
         this.aiIntentDetector = aiIntentDetector;
         this.aiResponseGenerator = aiResponseGenerator;
         this.aiToolSelector = aiToolSelector;
 
         if (aiEnabled && aiIntentDetector != null) {
-            log.info("AI-powered intent detection ENABLED with model: {}", aiModelName);
+            log.info("AI-powered intent detection ENABLED with provider: {}", llmRouter.getActiveProvider());
         } else {
             log.info("AI-powered intent detection DISABLED, using keyword fallback");
         }
@@ -117,7 +118,7 @@ public class ChatController {
             AiIntentResult aiResult = aiIntentDetector.detect(request.message());
             if (aiResult != null && !aiResult.intents().isEmpty()) {
                 intents = aiResult.intents();
-                usedModel = aiModelName;
+                usedModel = llmRouter.getActiveProvider();
                 intentConfidence = aiResult.confidence();
                 detectedLanguage = aiResult.language();
                 log.info("AI intent detection succeeded: model={}, intents={}, confidence={}, language={}",

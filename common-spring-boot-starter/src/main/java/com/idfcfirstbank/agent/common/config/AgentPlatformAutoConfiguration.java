@@ -11,7 +11,6 @@ import com.idfcfirstbank.agent.common.security.JwtTokenProvider;
 import com.idfcfirstbank.agent.common.security.ServiceAuthenticationFilter;
 import com.idfcfirstbank.agent.common.vault.VaultClient;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Import;
 
@@ -21,7 +20,6 @@ import org.springframework.context.annotation.Import;
  * when this starter is on the classpath.
  */
 @AutoConfiguration
-@EnableConfigurationProperties(LlmProviderConfig.class)
 @Import({
         KafkaCommonConfig.class,
         JwtTokenProvider.class,

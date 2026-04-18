@@ -1,7 +1,7 @@
 package com.idfcfirstbank.agent.orchestrator.service;
 
+import com.idfcfirstbank.agent.common.llm.LlmRouter;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -20,18 +20,20 @@ import java.util.Map;
 @ConditionalOnProperty(name = "ai.enabled", havingValue = "true")
 public class AiResponseGenerator {
 
-    private final ChatClient chatClient;
+    private static final String SYSTEM_PROMPT = """
+            You are a helpful IDFC First Bank assistant.
+            Generate a natural, friendly response using the provided data.
+            Reply in the same language the customer used.
+            Be concise - max 2-3 sentences.
+            Never reveal full account numbers or card numbers.
+            Always mask sensitive data (e.g., show only last 4 digits).
+            If the data indicates an error or unavailability, apologize politely.
+            """;
 
-    public AiResponseGenerator(ChatClient.Builder builder) {
-        this.chatClient = builder.defaultSystem("""
-                You are a helpful IDFC First Bank assistant.
-                Generate a natural, friendly response using the provided data.
-                Reply in the same language the customer used.
-                Be concise - max 2-3 sentences.
-                Never reveal full account numbers or card numbers.
-                Always mask sensitive data (e.g., show only last 4 digits).
-                If the data indicates an error or unavailability, apologize politely.
-                """).build();
+    private final LlmRouter llmRouter;
+
+    public AiResponseGenerator(LlmRouter llmRouter) {
+        this.llmRouter = llmRouter;
     }
 
     /**
@@ -54,11 +56,7 @@ public class AiResponseGenerator {
                     Generate a natural, friendly response in %s language.""",
                     customerMessage, language, agentResponse, mapLanguageName(language));
 
-            String response = chatClient.prompt()
-                    .user(prompt)
-                    .call()
-                    .content();
-
+            String response = llmRouter.chat(SYSTEM_PROMPT, prompt);
             log.debug("AI response generated successfully");
             return response;
 

@@ -4,19 +4,19 @@ import com.idfcfirstbank.agent.common.kafka.AuditEventPublisher;
 import com.idfcfirstbank.agent.common.model.AuditEvent;
 import com.idfcfirstbank.agent.common.vault.PolicyDecision;
 import com.idfcfirstbank.agent.common.vault.VaultClient;
-import com.idfcfirstbank.agent.wealth.model.PortfolioSummary;
 import com.idfcfirstbank.agent.wealth.model.WealthRequest;
 import com.idfcfirstbank.agent.wealth.model.WealthResponse;
 import com.idfcfirstbank.agent.wealth.tools.WealthTools;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
+import com.idfcfirstbank.agent.common.llm.LlmRouter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -29,7 +29,7 @@ import java.util.UUID;
  * <ul>
  *   <li>PORTFOLIO_SUMMARY (Tier 1): Fetch MF holdings, FDs, insurance from MCP servers</li>
  *   <li>SIP_MANAGEMENT (Tier 1): Create/modify/cancel SIP via investment MCP</li>
- *   <li>INVESTMENT_QUERY (Tier 2 - LLM): Use ChatClient with SEBI disclaimer</li>
+ *   <li>INVESTMENT_QUERY (Tier 2 - LLM): Use LlmRouter with SEBI disclaimer</li>
  *   <li>INSURANCE_STATUS (Tier 0): Fetch policy status, premium due date</li>
  * </ul>
  * <p>
@@ -48,9 +48,25 @@ public class WealthService {
             "Mutual fund investments are subject to market risks. Read all scheme related documents carefully. "
                     + "Past performance is not indicative of future returns.";
 
+    private static final String SYSTEM_PROMPT = """
+            You are the Wealth Management Agent for IDFC First Bank. You handle wealth-related
+            queries including portfolio summaries, mutual fund investments, SIP management,
+            fixed deposits, insurance policies, and investment advisory.
+
+            CRITICAL REGULATORY REQUIREMENT:
+            You MUST include the following SEBI disclaimer before ANY investment recommendation
+            or mutual fund related information:
+            "Mutual fund investments are subject to market risks. Read all scheme related documents
+            carefully. Past performance is not indicative of future returns."
+
+            Always verify the customer's risk profile before providing investment suggestions.
+            Be precise with financial figures and format currency amounts in INR.
+            Never provide guaranteed return projections.
+            """;
+
     private static final String AGENT_ID = "wealth-agent";
 
-    private final ChatClient chatClient;
+    private final LlmRouter llmRouter;
     private final VaultClient vaultClient;
     private final WealthTools wealthTools;
     private final AuditEventPublisher auditEventPublisher;
@@ -203,7 +219,7 @@ public class WealthService {
     }
 
     /**
-     * Tier 2 (LLM): Investment query. Uses ChatClient with function calling.
+     * Tier 2 (LLM): Investment query. Uses LlmRouter.
      * MUST include SEBI disclaimer. Checks risk profile before providing advice.
      */
     public WealthResponse handleInvestmentQuery(WealthRequest request) {
@@ -215,19 +231,7 @@ public class WealthService {
         try {
             String userPrompt = buildInvestmentPrompt(request, riskProfile);
 
-            String llmResponse = chatClient.prompt()
-                    .user(userPrompt)
-                    .functions(
-                            "getPortfolio",
-                            "getSipDetails",
-                            "createSip",
-                            "modifySip",
-                            "cancelSip",
-                            "getInsuranceStatus",
-                            "getRiskProfile"
-                    )
-                    .call()
-                    .content();
+            String llmResponse = llmRouter.chat(SYSTEM_PROMPT, userPrompt);
 
             // Ensure SEBI disclaimer is always present in response
             String fullResponse = SEBI_DISCLAIMER + "\n\n" + llmResponse;
@@ -276,29 +280,66 @@ public class WealthService {
         );
     }
 
+    /** Allow-listed parameter keys forwarded to the LLM for investment queries. */
+    private static final List<String> ALLOWED_INVESTMENT_PARAMS = List.of(
+            "investmentHorizon", "preferredAssetClass", "existingInvestments", "goalType"
+    );
+
     /**
-     * Build a prompt for the LLM that includes risk profile context and the SEBI disclaimer requirement.
+     * Build a prompt for the LLM that includes only the allow-listed risk category
+     * (not the full risk profile payload) and sanitised request parameters.
+     * Customer ID is intentionally excluded to minimise PII sent to external LLM.
      */
     private String buildInvestmentPrompt(WealthRequest request, String riskProfile) {
+        // Extract only riskCategory from the raw JSON profile to avoid sending full payload
+        String riskCategory = extractRiskCategory(riskProfile);
+
         StringBuilder prompt = new StringBuilder();
-        prompt.append("Customer ID: ").append(request.customerId()).append("\n");
         prompt.append("Customer message: ").append(request.message()).append("\n");
-        prompt.append("Customer Risk Profile: ").append(riskProfile).append("\n");
+        prompt.append("Risk Category: ").append(riskCategory).append("\n");
 
         if (request.intent() != null) {
             prompt.append("Detected intent: ").append(request.intent()).append("\n");
         }
+
+        // Only forward allow-listed parameters — no raw IDs or PII
         if (request.parameters() != null && !request.parameters().isEmpty()) {
-            prompt.append("Extracted parameters: ").append(request.parameters()).append("\n");
+            Map<String, Object> safeParams = new LinkedHashMap<>();
+            for (String key : ALLOWED_INVESTMENT_PARAMS) {
+                if (request.parameters().containsKey(key)) {
+                    safeParams.put(key, request.parameters().get(key));
+                }
+            }
+            if (!safeParams.isEmpty()) {
+                prompt.append("Context: ").append(safeParams).append("\n");
+            }
         }
 
         prompt.append("\nIMPORTANT: You MUST consider the customer's risk profile before making ");
         prompt.append("any investment recommendations. Never suggest products that exceed the ");
         prompt.append("customer's risk tolerance.\n");
-        prompt.append("Process this customer's wealth management request using the available tools. ");
+        prompt.append("Process this customer's wealth management request. ");
         prompt.append("Provide a clear, friendly response with the relevant financial information.");
 
         return prompt.toString();
+    }
+
+    /**
+     * Extract the riskCategory field from a raw JSON risk-profile string.
+     * Falls back to the full string if parsing fails.
+     */
+    private String extractRiskCategory(String riskProfile) {
+        if (riskProfile == null || riskProfile.isBlank()) {
+            return "UNKNOWN";
+        }
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(riskProfile);
+            com.fasterxml.jackson.databind.JsonNode cat = node.path("riskCategory");
+            return cat.isMissingNode() ? "UNKNOWN" : cat.asText("UNKNOWN");
+        } catch (Exception e) {
+            log.debug("Could not parse riskProfile JSON, using raw value");
+            return riskProfile;
+        }
     }
 
     /**

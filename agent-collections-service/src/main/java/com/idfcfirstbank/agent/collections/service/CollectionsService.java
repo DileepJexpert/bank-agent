@@ -10,7 +10,7 @@ import com.idfcfirstbank.agent.common.vault.PolicyDecision;
 import com.idfcfirstbank.agent.common.vault.VaultClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
+import com.idfcfirstbank.agent.common.llm.LlmRouter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -49,7 +49,33 @@ public class CollectionsService {
     private static final String CONTACT_COUNT_KEY_PREFIX = "collections:contact_count:";
     private static final Duration CONTACT_COUNT_TTL = Duration.ofDays(7);
 
-    private final ChatClient chatClient;
+    private static final String SYSTEM_PROMPT_BASE = """
+            You are the Collections Agent for IDFC First Bank. You handle loan collection
+            and recovery operations with empathy and professionalism, always complying with
+            RBI guidelines for debt collection.
+
+            Your capabilities:
+            - Negotiate restructured EMI payment plans for overdue accounts
+            - Calculate and present settlement offers with applicable discounts
+            - Guide customers through immediate payment options
+            - Explain overdue consequences and available remedies
+
+            MANDATORY RULES:
+            1. Never use threatening or abusive language. Be firm but empathetic.
+            2. Respect RBI-mandated contact frequency limits (max 3 contacts per week per customer).
+            3. Do not contact customers outside permitted hours (9 AM to 6 PM, Monday to Saturday).
+            4. Always present the overdue amount, applicable charges, and available resolution options.
+            5. Settlement discount percentages are governed by vault policy - do not promise specific discounts.
+            6. Format all currency amounts in INR with proper formatting.
+            7. If the customer disputes the debt or requests escalation, comply immediately.
+            """;
+
+    /** RBI-mandated opening disclosure required only on voice/telephony channels. */
+    private static final String VOICE_OPENING_RULE =
+            "MANDATORY FOR THIS CHANNEL: Begin your response with: " +
+            "\"This is IDFC First Bank AI assistant. This call is recorded per RBI guidelines.\"\n\n";
+
+    private final LlmRouter llmRouter;
     private final VaultClient vaultClient;
     private final AuditEventPublisher auditEventPublisher;
     private final CollectionsInteractionRepository interactionRepository;
@@ -76,7 +102,7 @@ public class CollectionsService {
     }
 
     /**
-     * Tier 2: Negotiate a restructured EMI payment plan using ChatClient.
+     * Tier 2: Negotiate a restructured EMI payment plan using LlmRouter.
      */
     public CollectionsResponse handlePaymentPlan(CollectionsRequest request) {
         long startTime = System.currentTimeMillis();
@@ -101,10 +127,7 @@ public class CollectionsService {
         try {
             String userPrompt = buildPaymentPlanPrompt(request);
 
-            String llmResponse = chatClient.prompt()
-                    .user(userPrompt)
-                    .call()
-                    .content();
+            String llmResponse = llmRouter.chat(buildSystemPrompt(request), userPrompt);
 
             // Record the interaction
             CollectionsInteraction interaction = CollectionsInteraction.builder()
@@ -207,10 +230,7 @@ public class CollectionsService {
 
             String userPrompt = buildSettlementPrompt(request, requestedDiscountPct, settlementAmount);
 
-            String llmResponse = chatClient.prompt()
-                    .user(userPrompt)
-                    .call()
-                    .content();
+            String llmResponse = llmRouter.chat(buildSystemPrompt(request), userPrompt);
 
             // Record the interaction
             CollectionsInteraction interaction = CollectionsInteraction.builder()
@@ -326,18 +346,13 @@ public class CollectionsService {
 
         try {
             String userPrompt = String.format(
-                    "Customer ID: %s\nLoan ID: %s\nOverdue Amount: %s\nCustomer message: %s\n\n"
+                    "Overdue Amount: %s\nCustomer message: %s\n\n"
                             + "Please assist this customer with their collections query. "
                             + "Be empathetic and professional.",
-                    request.customerId(),
-                    request.loanId() != null ? request.loanId() : "N/A",
                     request.overdueAmount() != null ? request.overdueAmount().toPlainString() : "N/A",
                     request.message() != null ? request.message() : "");
 
-            String llmResponse = chatClient.prompt()
-                    .user(userPrompt)
-                    .call()
-                    .content();
+            String llmResponse = llmRouter.chat(buildSystemPrompt(request), userPrompt);
 
             CollectionsResponse response = new CollectionsResponse(
                     request.sessionId(),
@@ -368,6 +383,18 @@ public class CollectionsService {
     }
 
     // ── Helper methods ──
+
+    /**
+     * Build the system prompt, adding the RBI call-opening disclosure rule only for
+     * voice/telephony channels (not for web or chat).
+     */
+    private String buildSystemPrompt(CollectionsRequest request) {
+        String channel = request.parameters() != null
+                ? String.valueOf(request.parameters().getOrDefault("channel", ""))
+                : "";
+        boolean isVoice = "voice".equalsIgnoreCase(channel) || "telephony".equalsIgnoreCase(channel);
+        return isVoice ? VOICE_OPENING_RULE + SYSTEM_PROMPT_BASE : SYSTEM_PROMPT_BASE;
+    }
 
     private PolicyDecision evaluatePolicy(String customerId, String action, CollectionsRequest request) {
         Map<String, Object> context = new HashMap<>();
@@ -434,12 +461,10 @@ public class CollectionsService {
 
     private String buildPaymentPlanPrompt(CollectionsRequest request) {
         return String.format("""
-                Customer ID: %s
-                Loan ID: %s
                 Overdue Amount: INR %s
                 Customer message: %s
 
-                The customer is requesting a restructured EMI payment plan for their overdue account.
+                The customer is requesting a restructured EMI payment plan for their overdue loan account.
                 Please negotiate a feasible repayment schedule considering:
                 1. The total overdue amount and any applicable late fees
                 2. The customer's ability to pay (based on their message)
@@ -447,8 +472,6 @@ public class CollectionsService {
                 4. Present 2-3 options with clear EMI amounts and timelines
                 5. Be empathetic but ensure the bank's interests are protected
                 """,
-                request.customerId(),
-                request.loanId() != null ? request.loanId() : "N/A",
                 request.overdueAmount() != null ? request.overdueAmount().toPlainString() : "N/A",
                 request.message() != null ? request.message() : "");
     }
@@ -457,8 +480,6 @@ public class CollectionsService {
                                          BigDecimal discountPct,
                                          BigDecimal settlementAmount) {
         return String.format("""
-                Customer ID: %s
-                Loan ID: %s
                 Original Overdue Amount: INR %s
                 Approved Discount: %s%%
                 Settlement Amount: INR %s
@@ -472,8 +493,6 @@ public class CollectionsService {
                 5. Impact on credit score: settled status vs continued default
                 6. This is a one-time offer subject to bank approval
                 """,
-                request.customerId(),
-                request.loanId() != null ? request.loanId() : "N/A",
                 request.overdueAmount() != null ? request.overdueAmount().toPlainString() : "N/A",
                 discountPct.toPlainString(),
                 settlementAmount.toPlainString(),

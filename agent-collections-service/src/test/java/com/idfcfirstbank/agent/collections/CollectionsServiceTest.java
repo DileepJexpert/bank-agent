@@ -15,7 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.client.ChatClient;
+import com.idfcfirstbank.agent.common.llm.LlmRouter;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -35,13 +35,7 @@ import static org.mockito.Mockito.*;
 class CollectionsServiceTest {
 
     @Mock
-    private ChatClient chatClient;
-
-    @Mock
-    private ChatClient.ChatClientRequestSpec requestSpec;
-
-    @Mock
-    private ChatClient.CallResponseSpec callResponseSpec;
+    private LlmRouter llmRouter;
 
     @Mock
     private VaultClient vaultClient;
@@ -116,10 +110,7 @@ class CollectionsServiceTest {
         void shouldProcessPaymentPlanWhenAllowed() {
             when(vaultClient.evaluatePolicy(anyString(), anyString(), anyString(), anyMap()))
                     .thenReturn(allowDecision());
-            when(chatClient.prompt()).thenReturn(requestSpec);
-            when(requestSpec.user(anyString())).thenReturn(requestSpec);
-            when(requestSpec.call()).thenReturn(callResponseSpec);
-            when(callResponseSpec.content()).thenReturn(
+            when(llmRouter.chat(anyString(), anyString())).thenReturn(
                     "Here are your restructured EMI options for loan LOAN-456...");
 
             CollectionsResponse response = collectionsService.processQuery(buildRequest("PAYMENT_PLAN"));
@@ -142,7 +133,7 @@ class CollectionsServiceTest {
 
             assertThat(response.message()).contains("Unable to process");
             assertThat(response.escalated()).isFalse();
-            verify(chatClient, never()).prompt();
+            verify(llmRouter, never()).chat(anyString(), anyString());
         }
     }
 
@@ -159,10 +150,7 @@ class CollectionsServiceTest {
             Map<String, Object> params = Map.of("requestedDiscountPct", "10");
             when(vaultClient.evaluatePolicy(anyString(), anyString(), anyString(), anyMap()))
                     .thenReturn(allowDecision());
-            when(chatClient.prompt()).thenReturn(requestSpec);
-            when(requestSpec.user(anyString())).thenReturn(requestSpec);
-            when(requestSpec.call()).thenReturn(callResponseSpec);
-            when(callResponseSpec.content()).thenReturn(
+            when(llmRouter.chat(anyString(), anyString())).thenReturn(
                     "Your settlement amount is INR 45,000.00 with a 10% discount.");
 
             CollectionsResponse response = collectionsService.processQuery(
@@ -188,7 +176,7 @@ class CollectionsServiceTest {
 
             assertThat(response.escalated()).isTrue();
             assertThat(response.message()).contains("senior collections officer");
-            verify(chatClient, never()).prompt();
+            verify(llmRouter, never()).chat(anyString(), anyString());
         }
 
         @Test
@@ -203,7 +191,7 @@ class CollectionsServiceTest {
 
             assertThat(response.message()).contains("Unable to process");
             assertThat(response.escalated()).isFalse();
-            verify(chatClient, never()).prompt();
+            verify(llmRouter, never()).chat(anyString(), anyString());
         }
 
         @Test
@@ -241,7 +229,7 @@ class CollectionsServiceTest {
             assertThat(response.paymentLink()).contains("loanId=" + LOAN_ID);
             assertThat(response.paymentLink()).contains("amount=" + OVERDUE_AMOUNT.toPlainString());
             assertThat(response.settlementAmount()).isEqualByComparingTo(OVERDUE_AMOUNT);
-            verify(chatClient, never()).prompt();
+            verify(llmRouter, never()).chat(anyString(), anyString());
             verify(interactionRepository).save(any());
         }
 
@@ -281,10 +269,7 @@ class CollectionsServiceTest {
         void shouldRouteToGeneralForUnknownIntent() {
             when(vaultClient.evaluatePolicy(anyString(), anyString(), anyString(), anyMap()))
                     .thenReturn(allowDecision());
-            when(chatClient.prompt()).thenReturn(requestSpec);
-            when(requestSpec.user(anyString())).thenReturn(requestSpec);
-            when(requestSpec.call()).thenReturn(callResponseSpec);
-            when(callResponseSpec.content()).thenReturn("How can I help you with your account?");
+            when(llmRouter.chat(anyString(), anyString())).thenReturn("How can I help you with your account?");
 
             CollectionsResponse response = collectionsService.processQuery(buildRequest("UNKNOWN"));
 
@@ -296,10 +281,7 @@ class CollectionsServiceTest {
         void shouldHandleNullIntentAsGeneral() {
             when(vaultClient.evaluatePolicy(anyString(), anyString(), anyString(), anyMap()))
                     .thenReturn(allowDecision());
-            when(chatClient.prompt()).thenReturn(requestSpec);
-            when(requestSpec.user(anyString())).thenReturn(requestSpec);
-            when(requestSpec.call()).thenReturn(callResponseSpec);
-            when(callResponseSpec.content()).thenReturn("How can I help you?");
+            when(llmRouter.chat(anyString(), anyString())).thenReturn("How can I help you?");
 
             CollectionsResponse response = collectionsService.processQuery(buildRequest(null));
 
@@ -318,10 +300,7 @@ class CollectionsServiceTest {
         void shouldIncrementContactCount() {
             when(vaultClient.evaluatePolicy(anyString(), anyString(), anyString(), anyMap()))
                     .thenReturn(allowDecision());
-            when(chatClient.prompt()).thenReturn(requestSpec);
-            when(requestSpec.user(anyString())).thenReturn(requestSpec);
-            when(requestSpec.call()).thenReturn(callResponseSpec);
-            when(callResponseSpec.content()).thenReturn("Payment plan details...");
+            when(llmRouter.chat(anyString(), anyString())).thenReturn("Payment plan details...");
             when(valueOperations.increment(anyString())).thenReturn(1L);
 
             collectionsService.processQuery(buildRequest("PAYMENT_PLAN"));
